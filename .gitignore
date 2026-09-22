@@ -1,0 +1,14 @@
+node_modules/
+dist/
+dist-server/
+artifacts/
+data/*
+!data/.gitkeep
+logs/*
+!logs/.gitkeep
+.env
+.env.*
+!.env.example
+playwright-report/
+test-results/
+*.sqlite*

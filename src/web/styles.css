@@ -1,0 +1,844 @@
+@import 'maplibre-gl/dist/maplibre-gl.css';
+
+/* The token set, aligned with the Lark (飞书) palette: a neutral grey scale
+   carries the whole interface, one brand colour marks what is actionable or
+   selected, and four semantic colours mean exactly one thing each.
+
+   Cartula keeps its own green as that brand colour rather than taking Lark's
+   blue — the map's own plan colours already include blue, and a chrome that
+   shares a hue with a route is a chrome that competes with it. Everything the
+   map itself draws (plan colours, the day ladder, risk line styles) is out of
+   this file and stays exactly as dayColors.ts computes it.
+
+   Two deviations from the spec's literal values, both for legibility of small
+   text: #F53F3F and #FF7D00 are kept for icons, fills and borders, while the
+   11px text that carries the same meaning uses the darker --danger-strong
+   (4.7:1 on white) and --warning-text (5.0:1). The spec's own values sit at
+   3.7:1 and 2.6:1, which is under AA for the sizes used here. */
+:root{font-family:Inter,"PingFang SC","Noto Sans CJK SC","Microsoft YaHei",system-ui,sans-serif;color:var(--ink);background:var(--fill);font-synthesis:none;
+  /* 中性色：背景 / 文本 / 边框 */
+  --paper:#ffffff;--fill:#f2f3f5;--fill-soft:#f5f6f7;
+  --ink:#1f2329;--muted:#646a73;--subtle:#8f959e;
+  --line:#d0d3d6;--line-soft:#e5e6eb;--line-strong:#c9cdd4;
+  /* The two surfaces that sit over the map. They stay slightly translucent
+     behind their backdrop-filter — a panel that is opaque white loses the
+     "floating above the map" reading the whole layout depends on. */
+  --surface:#fffffff9;--surface-float:#ffffffef;
+  /* 品牌色（墨绿）：主按钮、选中态、焦点环 */
+  --green:#176453;--green-hover:#0d5242;--green-soft:#e9f1ee;--green-line:#b6ccc4;--green-ring:#1764531f;
+  /* 语义色 */
+  --success:#00b42a;--success-bg:#e8ffea;--success-line:#aff0b5;--success-text:#00801a;
+  --warning:#ff7d00;--warning-bg:#fff7e8;--warning-line:#ffcf8b;--warning-text:#a2600a;
+  --danger:#f53f3f;--danger-strong:#d93636;--danger-bg:#ffece8;--danger-line:#fbaca3;
+  --info:#165dff;--info-bg:#e8f3ff;--info-line:#bedaff;
+  /* 阴影三档，都很轻：控件 / 浮层 / 弹窗 */
+  --shadow:0 2px 8px rgba(31,35,41,.08);--shadow-panel:0 4px 16px rgba(31,35,41,.1);--shadow-modal:0 8px 32px rgba(31,35,41,.16);
+  --app-max-height:720px}
+*{box-sizing:border-box}body{margin:0}button,input,textarea,select{font:inherit}button,a,input,textarea,select{-webkit-tap-highlight-color:transparent}button{cursor:pointer}button:disabled{cursor:not-allowed;opacity:.4}button:focus-visible,a:focus-visible{outline:2px solid var(--green);outline-offset:2px}button{color:inherit}a{color:var(--green)}h1,h2,h3,p{margin:0}button svg{flex-shrink:0}button{border:0;background:none}input,textarea,select{width:100%;border:1px solid var(--line);border-radius:8px;background:var(--paper);padding:10px 12px;color:var(--ink);outline:none;transition:border-color .15s}input:focus,textarea:focus,select:focus{border-color:var(--green);box-shadow:0 0 0 3px var(--green-ring)}textarea{resize:vertical;line-height:1.65}input[type=color]{padding:4px;height:42px}input[type=checkbox]{width:16px;height:16px;accent-color:var(--green);flex-shrink:0}fieldset{padding:0;margin:0;border:0;min-width:0}label{display:flex;flex-direction:column;gap:7px;font-size:12px;font-weight:550;color:var(--muted);margin-bottom:15px}.eyebrow{font-size:9px;letter-spacing:1.8px;color:var(--muted);font-weight:650}.button{display:inline-flex;align-items:center;justify-content:center;gap:7px;border:1px solid var(--line);background:var(--paper);min-height:37px;padding:8px 13px;border-radius:8px;white-space:nowrap;font-size:12px;font-weight:550;transition:background .15s,box-shadow .15s}.button:hover:not(:disabled){background:var(--fill);border-color:var(--line-strong)}.button.primary{background:var(--green);border-color:var(--green);color:#fff}.button.primary:hover:not(:disabled){background:var(--green-hover)}.button.quiet{background:transparent;border-color:transparent}.button.compact{min-height:33px;padding:6px 11px;font-size:11px}.icon-button{display:inline-flex;align-items:center;justify-content:center;width:29px;height:29px;flex-shrink:0;border-radius:6px;color:var(--muted)}.icon-button:hover:not(:disabled){color:var(--green);background:var(--fill)}.danger{color:var(--danger-strong)}.button.danger:hover{background:var(--danger-bg);color:var(--danger-strong)}html,body,#root{height:var(--host-height,100%);width:var(--host-width,100%);max-height:var(--host-max-height,none);max-width:var(--host-max-width,none);margin:0}
+/* The height the embedded card actually renders at.
+   The rule above follows the host wherever it points, and `none` means a host
+   that publishes no height bound gets whatever the card grows to. That is how
+   one map ended up several screens tall in Claude and a 240px sliver in Codex —
+   the same app pulled in opposite directions by two hosts.
+
+   `--app-height` is the smallest of three numbers: our own ceiling
+   (`--app-max-height`, kept in step with PREFERRED_HEIGHT in
+   adapters/host-size.ts) and whatever the host declared on this axis, fixed or
+   elastic. A *fixed* height is a bound here and not an instruction to fill,
+   which is the deliberate reading: the spec has the view fill a fixed axis, but
+   a host that fixes the height at 1600px has decided how much room it has, and
+   a card that takes all of it is one the reader scrolls several screens past to
+   reach the rest of the conversation. Room offered is not room worth taking, so
+   the card renders at its own height and leaves the rest of the frame empty —
+   and says so, which is how the host gets the chance to take that room back
+   (see resolveSizeRequest).
+
+   `min()` with a per-variable fallback is load-bearing twice over. Reading it
+   as `var(--host-height, <ceiling>)` would let a fixed 1600 through, because a
+   `var()` fallback only applies when the variable is *missing*; and each
+   fallback has to be the ceiling itself, so a bound the host did not declare
+   drops out of the min instead of pinning it to zero.
+
+   It is applied as `height`, and to `html`/`body` as well as `#root`, because
+   some hosts do not ask: they size the frame by measuring the document, so
+   `documentElement` and `body` have to report the capped height rather than
+   the frame's. `max-height` would not do it on the root element, where it does
+   not reliably clamp `height`.
+
+   `--app-height` only exists on an embedded card, so the fallbacks below keep
+   the standalone page and both kinds of fullscreen exactly as they were: those
+   are surfaces the map is meant to fill. The guard is `data-embedded`, set from
+   the bootstrap before first paint, rather than a display mode the host has to
+   name — a host that sends something unexpected there (or nothing) must not
+   silently lose the ceiling. */
+html[data-embedded]:not([data-display-mode="fullscreen"]):not([data-browser-fullscreen]){--app-height:min(var(--app-max-height),var(--host-height,var(--app-max-height)),var(--host-max-height,var(--app-max-height)))}
+html,body,#root{height:var(--app-height,var(--host-height,100%))}
+#root{max-height:var(--app-height,var(--host-max-height,none))}
+html[data-embedded] #root{overflow:hidden}.workspace{height:100%;width:100%;min-height:0;min-width:0;display:flex;flex-direction:column;overflow:hidden;container-type:size;container-name:workspace}.topbar{height:52px;flex-shrink:0;display:flex;align-items:center;gap:12px;padding:0 14px;border-bottom:1px solid var(--line);background:var(--paper);z-index:30}.brand{display:flex;align-items:center;gap:8px;text-decoration:none;flex-shrink:0;color:#185e4f;font-size:18px;font-weight:750;letter-spacing:-1px}.brand-dot{color:#79995c}.map-title{font-weight:600;letter-spacing:.1px;font-size:13px;white-space:nowrap;text-overflow:ellipsis;overflow:hidden;max-width:180px}.header-actions{display:flex;gap:9px;align-items:center;margin-left:auto}.save-state{display:flex;align-items:center;gap:7px;color:var(--muted);font-size:10px;white-space:nowrap}.save-state i,.live-dot{width:6px;height:6px;background:var(--success);border-radius:50%;display:inline-block}.save-state.polling i{background:var(--warning)}.save-state.offline i{background:var(--subtle)}.export-wrap{position:relative}.dropdown{position:absolute;top:calc(100% + 9px);right:0;min-width:215px;padding:6px;background:var(--paper);border:1px solid var(--line);border-radius:8px;box-shadow:var(--shadow);z-index:100}.dropdown-title{padding:10px 11px 8px;font-size:12px;font-weight:650;color:var(--ink);border-bottom:1px solid var(--line);margin-bottom:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.dropdown button{display:flex;gap:11px;align-items:center;text-align:left;padding:11px;width:100%;border-radius:6px;font-size:12px}.dropdown button:hover{background:var(--fill)}.dropdown small{display:block;color:var(--subtle);font-size:10px;margin-top:3px}.visually-hidden{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}.draft-bar .draft-version{display:none;font-size:10px;padding:0 6px}.workspace-body{display:flex;flex:1;min-height:0}.sidebar{display:none}.sidebar-title{padding:25px 23px 19px;display:flex;align-items:center;justify-content:space-between}.sidebar-title h2{font-size:19px;letter-spacing:.3px;font-weight:600;margin-top:7px}.sidebar-title h2 span{display:inline-flex;align-items:center;justify-content:center;background:var(--fill);color:var(--muted);border:1px solid var(--line-soft);font:11px ui-monospace,monospace;min-width:24px;height:23px;border-radius:6px;vertical-align:middle;margin-left:6px}.panel-toggle{display:none}.sidebar-scroll{overflow:auto;padding:0 16px 20px;flex:1;scrollbar-width:thin;scrollbar-color:var(--line-strong) transparent}.sidebar-tools{display:flex;gap:4px;margin:0 5px 21px}.section-label{font-size:10px;color:var(--subtle);display:flex;align-items:center;justify-content:space-between;margin:0 8px 11px;letter-spacing:.8px}.section-label button{font-size:10px;color:var(--muted);display:flex;align-items:center;gap:4px;letter-spacing:0}.layer-list{display:flex;flex-direction:column;gap:11px}.layer-card{position:relative;border:1px solid var(--line);border-radius:8px;background:var(--paper);transition:border-color .15s}.layer-card.active{border-color:var(--green-line);box-shadow:0 2px 8px rgba(31,35,41,.06)}.layer-heading{display:flex;align-items:center;gap:2px;padding:12px 10px 9px}.layer-select{display:flex;align-items:center;gap:9px;min-width:0;flex:1;text-align:left;padding:0}.layer-select>span:last-child{min-width:0}.layer-select strong{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:12px;font-weight:650;line-height:1.65}.layer-select small{display:block;font-size:9px;color:var(--subtle);line-height:1.7;margin-top:2px}.layer-symbol{height:33px;width:33px;flex-shrink:0;background:color-mix(in srgb,var(--layer-color) 9%,white);color:var(--layer-color);border-radius:8px;display:grid;place-items:center}.hidden-layer .layer-symbol,.hidden-layer .layer-select{opacity:.48}.layer-stats{display:flex;align-items:center;gap:20px;padding:0 15px 13px 52px;color:var(--muted);font-size:9px}.layer-stats b{font-size:14px;font-weight:650;letter-spacing:-.4px;color:var(--ink)}.layer-stats small{font-size:8px;margin-left:4px;color:var(--subtle)}.layer-detail{border-top:1px solid var(--line-soft)}.layer-note{font-size:10px;line-height:1.8;color:var(--muted);margin:13px 14px 7px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}.itinerary{padding:4px 7px}.point-row{position:relative;display:flex;align-items:center;border-radius:6px;min-height:40px}.point-row:before,.point-row:after{content:"";position:absolute;left:20px;border-left:1px dashed var(--line);pointer-events:none}.point-row:before{top:0;height:calc(50% - 13px)}.point-row:after{top:calc(50% + 13px);bottom:0}.point-row:first-child:before,.point-row:last-child:after{display:none}.point-row:hover,.point-row.selected{background:var(--fill)}.point-select{display:flex;align-items:center;gap:10px;text-align:left;min-width:0;flex:1;padding:5px 4px 5px 7px}.point-number{width:26px;height:26px;border:1px solid color-mix(in srgb,var(--layer-color) 24%,white);border-radius:50%;background:var(--paper);display:grid;place-items:center;flex-shrink:0;color:var(--layer-color);font:10px ui-monospace,monospace;z-index:1}.point-text{min-width:0}.point-text strong{display:flex;align-items:center;gap:5px;font-size:11px;font-weight:550;color:var(--ink)}.point-text strong svg{color:var(--warning-text)}.point-text small{display:block;color:var(--subtle);font-size:9px;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:100%}.point-actions{display:flex;align-items:center;flex-shrink:0;opacity:0}.point-row:hover .point-actions,.point-row:focus-within .point-actions,.point-row.selected .point-actions{opacity:1}.point-actions .icon-button{width:20px;height:24px}.drag-handle{color:var(--line-strong)}.add-point{display:flex;align-items:center;justify-content:center;gap:6px;width:calc(100% - 26px);margin:4px 13px 8px;padding:6px;font-size:10px;color:var(--muted);border:1px dashed var(--line);border-radius:6px}.add-point:hover{background:var(--fill)}.layer-footer{display:flex;align-items:center;justify-content:space-between;margin:0 14px 10px}.author{display:flex;gap:4px;align-items:center;font-size:9px;color:var(--subtle)}.author.user{color:var(--green)}.layer-footer>button{display:flex;align-items:center;gap:4px;font-size:9px;color:var(--subtle)}.source-note{margin:8px 14px 12px;font-size:9px;color:var(--subtle)}.source-note p{line-height:1.7;margin-top:7px;overflow-wrap:anywhere}.source-note summary{cursor:pointer}.layer-index{position:absolute;right:16px;bottom:12px;font:9px ui-monospace,monospace;color:var(--line-strong)}.canvas-hint{display:flex;gap:10px;margin:23px 9px 4px;color:var(--muted)}.canvas-hint p{font-size:10px;line-height:1.8;color:var(--muted)}.canvas-hint span{font-size:9px;color:var(--subtle)}.canvas-hint svg{flex-shrink:0;margin-top:2px}.changes-log{margin:20px 9px 0;font-size:10px;color:var(--muted)}.changes-log summary{cursor:pointer}.changes-log ul{padding-left:15px;line-height:1.8}.changes-log li{margin:7px 0}.changes-log span{color:var(--subtle)}.sidebar-bottom{border-top:1px solid var(--line-soft);display:flex;align-items:center;justify-content:space-between;padding:8px 20px}.coordinate-label{font-size:8px;letter-spacing:1px;color:var(--subtle)}.sidebar-empty{padding:55px 20px;text-align:center;color:var(--subtle)}.sidebar-empty h3{color:var(--ink);font-size:14px;margin:15px 0 8px}.sidebar-empty p{font-size:11px;line-height:1.8}.map-stage{position:relative;min-width:0;flex:1;background:var(--fill);overflow:hidden;--rail-top:20px;--rail-right:22px;--rail-size:37px;--rail-gap:7px;--rail-radius:8px;--rail-zoom-top:calc(var(--rail-top) + 2 * (var(--rail-size) + var(--rail-gap)))}.map-canvas{position:absolute!important;inset:0;width:100%;height:100%}.map-canvas>svg{width:100%;height:100%}.map-top-tools{position:absolute;top:var(--rail-top);right:var(--rail-right);display:flex;flex-direction:column;align-items:center;gap:var(--rail-gap);pointer-events:none;z-index:3}.map-top-tools>*{pointer-events:auto}.map-tools{display:flex;flex-direction:column;align-items:center;gap:var(--rail-gap)}.button.floating{box-shadow:var(--shadow);background:var(--surface-float)}.button.floating.primary{background:var(--green)}.map-bottom{position:absolute;bottom:33px;right:22px;display:flex;align-items:center;gap:10px;pointer-events:none;z-index:3}.map-bottom>*{pointer-events:auto}.adding-hint{position:absolute;z-index:5;top:79px;left:50%;transform:translateX(-50%);display:flex;gap:8px;align-items:center;background:var(--green);color:white;padding:13px 18px;border-radius:8px;box-shadow:var(--shadow);font-size:12px;white-space:nowrap}.notice{position:absolute;top:78px;left:20px;right:20px;display:flex;gap:10px;align-items:center;padding:11px 14px;background:var(--warning-bg);color:var(--warning-text);border:1px solid var(--warning-line);border-radius:8px;font-size:12px;z-index:40;box-shadow:var(--shadow)}.notice span{flex:1}.notice svg{flex-shrink:0}.empty-map{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);min-width:350px;max-width:90%;text-align:center;padding:30px 36px 35px;background:var(--surface);border:1px solid var(--line);border-radius:8px;box-shadow:var(--shadow);z-index:3}.empty-map-icon{margin:0 auto 22px;width:70px;height:70px;display:grid;place-items:center;background:var(--green-soft);color:var(--green);border-radius:8px}.empty-map h2{font-weight:550;font-size:22px;letter-spacing:-.5px;margin:13px 0}.empty-map p{font-size:11px;color:var(--subtle);line-height:1.8;white-space:nowrap}.empty-map .button{margin-top:25px}.point-inspector{position:absolute;top:var(--panel-top);right:var(--panel-right);width:var(--panel-width);max-width:calc(100% - 2 * var(--panel-inset));max-height:var(--panel-max-height);overflow:auto;padding:14px 16px 16px;background:var(--surface);border:1px solid var(--line);border-radius:8px;box-shadow:var(--shadow-panel);z-index:10;backdrop-filter:blur(12px);scrollbar-width:thin}.point-popover,.leg-popover{width:var(--panel-width)}.popover-metric{font-size:12px;color:var(--muted);margin:0 0 8px;line-height:1.5}.form-actions.wrap{flex-wrap:wrap;justify-content:flex-start}.draft-bar{display:flex;gap:4px;align-items:center;background:var(--surface-float);border:1px solid var(--line);border-radius:6px;padding:4px 6px;box-shadow:var(--shadow)}.changes-drawer{position:absolute;right:var(--panel-right);bottom:var(--panel-bottom);width:var(--panel-width);max-width:calc(100% - 2 * var(--panel-inset));max-height:45%;overflow:auto;padding:14px 16px;background:var(--surface);border:1px solid var(--line);border-radius:8px;box-shadow:var(--shadow-panel);z-index:12}.changes-drawer ul{padding-left:16px;font-size:12px;line-height:1.7;margin:8px 0 12px}.overlay-banner{position:absolute;top:16px;left:16px;z-index:70;max-width:280px}.inspector-heading{display:flex;align-items:center;justify-content:space-between}.point-inspector h2{font-size:20px;letter-spacing:-.6px;font-weight:600;margin-top:4px}.inspector-layer{display:flex;align-items:center;gap:6px;font-size:10px;color:var(--muted);margin:9px 0 20px}.inspector-layer i{width:6px;height:6px;border-radius:50%}.point-inspector label{font-size:10px}.point-inspector input,.point-inspector textarea{font-size:11px;padding:9px 10px}.point-image{width:100%;height:140px;object-fit:cover;border-radius:8px;margin-bottom:15px}.form-columns{display:grid;grid-template-columns:1fr 1fr;gap:12px}.checkbox-label{flex-direction:row;align-items:center;font-size:11px;gap:8px;font-weight:400}.image-field{font-size:10px;color:var(--subtle);margin-bottom:12px}.image-field summary{cursor:pointer;margin-bottom:10px}.form-actions{display:flex;justify-content:flex-end;align-items:center;gap:9px;margin-top:20px}.form-actions .danger{margin-right:auto}.read-only-note{font-size:10px;color:var(--subtle);padding-top:10px;border-top:1px solid var(--line)}.modal-backdrop{position:fixed;inset:0;background:#1f232973;backdrop-filter:blur(3px);display:grid;place-items:center;padding:22px;z-index:100}.modal{width:min(100%,490px);max-height:90dvh;overflow:auto;padding:26px;border:1px solid var(--line);background:var(--paper);border-radius:8px;box-shadow:var(--shadow-modal)}.dialog-heading{display:flex;justify-content:space-between;align-items:center;margin-bottom:23px}.dialog-heading h2{font-size:20px;letter-spacing:-.6px;font-weight:600}.dialog-description{font-size:12px;line-height:1.8;color:var(--subtle);margin:-7px 0 20px}.file-upload{position:relative;display:flex;align-items:center;gap:11px;flex-direction:row;justify-content:center;padding:22px;background:var(--fill-soft);border:1px dashed var(--line);border-radius:8px;color:var(--muted);font-size:11px;overflow:hidden}.file-upload input{position:absolute;inset:0;opacity:0;cursor:pointer}.json-input{font:11px/1.7 ui-monospace,SFMono-Regular,monospace;background:var(--fill-soft)}.form-error{font-size:11px;color:var(--danger-strong);line-height:1.7;max-height:110px;overflow:auto}.maplibregl-ctrl-group{box-shadow:var(--shadow)!important;border:1px solid var(--line);background:var(--paper)!important}.maplibregl-ctrl-logo{display:none!important}
+@container workspace (max-width: 1190px){.topbar{gap:8px;padding:0 10px}.header-actions{gap:4px}}
+@container workspace (max-width: 900px){.topbar{height:48px;gap:8px;padding:0 10px}.brand{font-size:16px}.brand>svg{width:24px;height:24px}.map-title{max-width:96px;font-size:12px}.button{padding:8px 11px;font-size:11px}.map-stage{min-height:0;--rail-top:10px;--rail-right:10px}.map-bottom{right:10px;bottom:16px}.adding-hint{font-size:10px;padding:10px;top:12px;white-space:normal;max-width:90%;width:max-content}.notice{left:10px;right:10px;top:10px;font-size:11px}.empty-map{padding:20px 22px;min-width:240px}.empty-map h2{font-size:18px}.empty-map-icon{width:48px;height:48px;border-radius:8px;margin-bottom:12px}.empty-map p{font-size:9px;white-space:normal}.empty-map .button{margin-top:17px}.modal{padding:22px}.dialog-heading{margin-bottom:18px}.overlay-banner{left:10px;right:10px;max-width:none}}
+@media(prefers-reduced-motion:reduce){*{scroll-behavior:auto!important;transition:none!important;animation:none!important}}
+/* Route metrics, in the layer's 信息 dialog: three totals, the breakdown
+   under a rule, and the notes that keep the numbers honest. */
+.edit-hint { font-size: 11px; color: var(--muted); margin: 0 0 12px; line-height: 1.6; }
+.route-metrics .layer-stats { gap: 20px; padding: 0 0 14px; flex-wrap: wrap; }
+.route-metrics .layer-stats > span { display: flex; flex-direction: column; gap: 3px; }
+.route-metrics .layer-stats b { font-size: 18px; }
+.route-metrics .layer-stats small { margin-left: 0; font-size: 9px; }
+.metric-details { margin: 0 0 10px; padding: 10px 0 0; border-top: 1px solid var(--line-soft); font-size: 11px; color: var(--muted); }
+.metric-details > div { display: flex; justify-content: space-between; gap: 10px; margin: 6px 0; }
+.metric-details dd { margin: 0; text-align: right; color: var(--ink); }
+.metric-note { font-size: 10px; line-height: 1.7; color: var(--subtle); overflow-wrap: anywhere; margin-top: 4px; }
+/* Provenance rows under the metrics: who provided the layer, where its data
+   came from, what it was meant to do. */
+.layer-info { margin: 12px 0 0; padding-top: 10px; border-top: 1px solid var(--line-soft); font-size: 11px; }
+.layer-info > div { display: flex; gap: 12px; margin: 6px 0; }
+.layer-info dt { flex: 0 0 64px; color: var(--subtle); }
+.layer-info dd { margin: 0; flex: 1; min-width: 0; color: var(--ink); line-height: 1.6; overflow-wrap: anywhere; }
+.layer-info .author { font-size: 11px; }
+.segment-stat { color: var(--green) !important; padding-top: 1px; }
+.point-intent { color: var(--warning-text) !important; }
+/* A point popover and the info feed now share one dock, and both can be open:
+   信息 clears the detail panel but not the selection, and selecting a point
+   does not close the feed. The popover is the thing just clicked, so it wins —
+   at 12 it merely tied with the feed and lost on source order, which read as a
+   click on the map doing nothing. */
+.point-inspector { max-height: var(--panel-max-height); overflow-y: auto; z-index: 13; }
+/* One geometry for every floating panel, retuned per width at the end of this
+   file. Panels dock to a side and scroll inside themselves: the common host
+   card is ~720px wide, and anything spanning that width hides the very map the
+   panel is describing.
+
+   Both edges are read off the --rail-* stack above rather than restated, so the
+   whole arrangement tracks the rail at every width: a panel starts one gap below
+   the first rail button, which is what makes the info feed read as hanging off
+   the info icon rather than floating near it, and stops one button short of the
+   right edge so the rail's column stays clear. */
+.map-stage {
+  --panel-top: calc(var(--rail-top) + var(--rail-size) + var(--rail-gap));
+  --panel-bottom: 86px;
+  --panel-inset: 16px;
+  /* Right-docked panels clear the tool rail's column, not just its right edge.
+     The rail became vertical this round — info, locate, then MapLibre's zoom
+     pair, four buttons deep — so a panel pinned to --rail-right covers three of
+     them. They are painted at z-index 3 and the panels at 55-58 (below), which
+     is not a stacking accident to fix by reordering: an opaque card over a
+     control is unreachable whatever the order, and the rail is how the map is
+     reframed while a panel is open. So the dock moves inboard by one button and
+     one gap, and the rail keeps its own column at every width. */
+  --panel-right: calc(var(--rail-right) + var(--rail-size) + var(--rail-gap));
+  /* The preferred width, and the width actually used. A left panel and a right
+     one are open at the same time, so each may take at most half of what is
+     left after the two docks and a 120px strip of map between them — without
+     that clamp the two meet and overlap in the band just above the sheet
+     breakpoint, which is the same "panel covers the map" failure by another
+     route. Below that breakpoint they stack instead and this stops applying.
+
+     The left term is --detail-left, not --panel-inset: the tab strip pushes the
+     detail panel across, and measuring from the inset instead would promise a
+     120px strip while delivering 120 minus the strip. */
+  --panel-ideal: 300px;
+  /* How many panels are splitting the room. The clamp used to divide by 2
+     unconditionally, which made every panel pay for a neighbour that is not
+     there: on a 766px card a lone itinerary was held to 215px while 540px of
+     stage sat free, and the plan name in its heading was ellipsised to 方… by
+     a reservation for a popover nobody had opened. One panel takes what is
+     free; a second one opening splits it, and the 120px map floor below is
+     what both cases are measured against. */
+  --panel-share: 1;
+  --panel-width: min(var(--panel-ideal), calc((100% - var(--detail-left) - var(--panel-right) - 120px) / var(--panel-share)));
+  --panel-max-height: calc(100% - var(--panel-top) - var(--panel-bottom));
+  /* Where the detail panel's left edge sits: past the plan rail, which is
+     always there — 16px inset, 30px dots with 3px of padding, and an 8px gap
+     the pointer crosses on the way from a dot to its list. */
+  --detail-left: calc(var(--panel-inset) + 42px);
+}
+/* Floating layer panel: one layer's point list, beside the rail over the
+   map. Top-aligned with the rail's first dot rather than hung under the tool
+   rail like the right-hand panels: it belongs to the dot it opened from.
+
+   Its ceiling is the stage less the rail above and one inset below, and that
+   is the only ceiling it has, in every display mode and at every stage height.
+   Nothing lives under the left column — the credits are in a dialog and the
+   send button is on the right — so --panel-bottom, which reserves room for
+   that button under the right-docked panels, does not apply here. The list is
+   content-sized up to the cap, so a three-stop plan still leaves the map
+   alone; a 13-day plan on a 720px card runs to the bottom inset and scrolls
+   from there. */
+.layer-panel { position: absolute; top: var(--rail-top); left: var(--detail-left); width: var(--panel-width); max-width: calc(100% - var(--detail-left) - var(--panel-inset)); max-height: calc(100% - var(--rail-top) - var(--panel-inset)); display: flex; flex-direction: column; background: var(--surface); border: 1px solid var(--line); border-radius: 8px; box-shadow: var(--shadow-panel); z-index: 9; backdrop-filter: blur(12px); outline: none; }
+.panel-heading { display: flex; align-items: center; gap: 6px; padding: 12px 12px 10px 14px; border-bottom: 1px solid var(--line-soft); flex-shrink: 0; }
+.panel-heading .icon-button { width: 26px; height: 26px; }
+.panel-title { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.panel-title strong { font-size: 13px; font-weight: 650; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.panel-title small { font-size: 9px; color: var(--subtle); }
+/* The layer panel's heading is two rows. The first is the dot, the name and
+   the two controls that are about the panel (pin, close); the second is one
+   line of totals with the tools that are about the layer. Seven buttons on
+   one row with the name left it 方… on every plan. */
+.layer-panel .panel-heading { gap: 5px; padding: 6px 8px 2px 10px; border-bottom: 0; }
+.layer-panel .panel-heading .icon-button { width: 24px; height: 24px; }
+/* One line, ellipsised: the full name is in the tooltip. */
+.panel-name { flex: 1; min-width: 0; font-size: 12px; font-weight: 650; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.layer-panel.hidden-layer .panel-name { color: var(--muted); }
+.panel-tools { display: flex; align-items: center; gap: 1px; padding: 0 8px 4px 10px; border-bottom: 1px solid var(--line-soft); flex-shrink: 0; }
+.panel-tools .icon-button { width: 22px; height: 22px; }
+.panel-tools .icon-button[aria-pressed="true"] { color: var(--warning-text); }
+/* Totals: the value carries the weight, its qualifier (路由 / 直线 / 驾车) sits
+   beside it in the quiet colour. Inline so the line ellipsises as a whole. */
+.panel-facts { flex: 1; min-width: 0; margin-right: 6px; font-size: 9px; line-height: 1.6; color: var(--subtle); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.panel-facts b { font-weight: 600; color: var(--muted); }
+.panel-facts small { font-size: inherit; }
+.panel-facts small:not(:last-child)::after { content: "·"; margin: 0 4px; color: var(--line-strong); }
+.panel-body { overflow-y: auto; padding: 4px 4px 6px; scrollbar-width: thin; scrollbar-color: var(--line-strong) transparent; }
+
+/* A folded panel: heading only.
+
+   Every panel that floats over the map folds to its own heading once the
+   pointer has moved on (see `peek.ts`) — the map is the page, and a 280px
+   column of stops sitting on top of it is furniture. `display:none` rather than
+   a height animation: the panels are already max-height constrained and a
+   collapsing scroll container animates into a smear. The heading keeps its
+   border only when something follows it.
+
+   `.card-body`/`.panel-body` are the two body shapes in the app; a popover also
+   keeps its title, which is what says *which* marker on the map is selected. */
+[data-collapsed="true"] > .panel-body,
+[data-collapsed="true"] > .card-body { display: none; }
+[data-collapsed="true"] > .panel-heading { border-bottom: 0; padding-bottom: 12px; }
+.point-inspector[data-collapsed="true"] { padding-bottom: 12px; }
+.point-inspector[data-collapsed="true"] h2 { margin-bottom: 0; font-size: 17px; }
+/* Folded, a panel is a handle: it shrinks to what it still says, so the map
+   behind it comes back rather than being covered by an empty card. The layer
+   panel has no folded form — its handle is the dot in the rail, and the panel
+   itself is simply not there when nobody is reading it. */
+[data-collapsed="true"] { cursor: pointer; }
+.info-panel[data-collapsed="true"] { width: fit-content; min-width: 200px; max-width: var(--panel-width); }
+.point-inspector[data-collapsed="true"] { width: fit-content; min-width: 170px; max-width: var(--panel-width); }
+.pin-button.pinned { color: var(--green); background: var(--green-soft); }
+.panel-empty { font-size: 11px; color: var(--subtle); text-align: center; padding: 24px 16px; }
+.layer-panel .edit-hint { margin: 8px 14px 4px; }
+/* Rows scrolled into view inside the panel clear the sticky heading above them. */
+.point-row { scroll-margin: 60px; }
+/* SVG fallback pill hover feedback (deck.gl pills style themselves). */
+.map-leg-label rect { transition: fill-opacity .12s; }
+
+.point-image.compact { height:88px; margin-bottom:10px; }
+.field-hint { font-size:10px; color:var(--subtle); margin:-4px 0 10px; line-height:1.5; }
+/* The filled variant of `.danger`, for the button that confirms a destruction.
+   `.button.primary` would put the green of "go ahead, this is the safe path" on
+   the one action in this app that cannot be undone. */
+.button.destructive { background:var(--danger); border-color:var(--danger); color:#fff; }
+.button.destructive:hover:not(:disabled) { background:var(--danger-strong); border-color:var(--danger-strong); }
+/* Embedded (inline) hosts get the dense arrangement. Browser fullscreen is a
+   separate mechanism and is tracked by its own attribute, so entering it
+   inside an inline host opens the layout up without pretending the host
+   granted a fullscreen display mode.
+
+   There used to be a `max-height: min(240px, 42%)` on the itinerary panel here,
+   then a `min(200px, 42%)` for stages under 520px and a `min(160px, 46%)` for
+   the compact layout, each written for one sliver of a host — Codex clamps the
+   card to 240px — and each biting on cards that were not: in a 720px-tall
+   Claude card a 13-day plan showed 第 1 天 and nothing else, and on a ~520px
+   豆包 card the list was a 200px box with a day and a half in it and the rest
+   of the stage empty underneath. Height is not what a display mode or a
+   breakpoint tells us. The panel now has the one ceiling stated with it above:
+   the stage less the rail and an inset, whatever the host. */
+html[data-display-mode="inline"]:not([data-browser-fullscreen]) .map-bottom { bottom:16px; }
+
+/* Small host container (below the compact threshold in adapters/host-size.ts):
+   collapse everything optional, but never the way out — the expand button and
+   the plan switcher stay reachable. */
+html[data-compact="true"] .topbar { height:42px; padding:0 6px; gap:6px; }
+html[data-compact="true"] .topbar .save-state { display:none; }
+html[data-compact="true"] .map-title { max-width:80px; }
+html[data-compact="true"] .plan-dot { width:26px; height:26px; font-size:11px; }
+html[data-compact="true"] .plan-dot-new { width:22px; height:22px; }
+html[data-compact="true"] .map-stage { --rail-top:6px; --rail-right:6px; --rail-size:31px; --rail-gap:5px; --rail-radius:6px; }
+html[data-compact="true"] .map-bottom { bottom:6px; right:6px; }
+html[data-compact="true"] .header-actions button[aria-label="展开"] { background:var(--green-soft); border:1px solid var(--green-line); color:var(--green); }
+
+/* The account-level pair (保存到账号, then 账号) at the right end of the bar.
+   A hairline carries the grouping instead of whitespace alone, because the
+   gap between actions drops to 4px on narrow hosts and proximity stops
+   distinguishing "acts on this map" from "acts on my account". The gap is
+   inherited rather than restated so it keeps tracking .header-actions across
+   every breakpoint, and the rule is guarded on :not(:empty) so a host with no
+   account and no standalone escape hatch shows no dangling line. */
+.header-actions .header-system { display:flex; align-items:center; gap:inherit; }
+.header-actions .header-system:not(:empty) { margin-left:4px; padding-left:10px; border-left:1px solid var(--line); }
+
+/* Planning intents, agent notes and suggestions live in the info feed behind
+   the top-right info icon; the map itself stays resident-only. */
+
+/* Hand-off states: saved / delivered / refused / unknown are different facts. */
+.delivery-state { font-size:12px; line-height:1.7; margin-bottom:6px; padding:9px 11px; border-radius:8px; border:1px solid var(--success-line); background:var(--success-bg); color:var(--success-text); }
+.delivery-state.warn { background:var(--warning-bg); border-color:var(--warning-line); color:var(--warning-text); }
+.delivery-state.info { background:var(--info-bg); border-color:var(--info-line); color:var(--info); }
+.delivery-hint { font-size:11px; line-height:1.7; color:var(--muted); margin-bottom:14px; }
+.notice.info { background:var(--info-bg); border-color:var(--info-line); color:var(--info); }
+/* An error and a caution are different facts, and the banner carried the same
+   amber for both: `.notice.error` was rendered by the workspace but never
+   styled, so a failed write looked like a hint. Danger red says which one this
+   is before the sentence is read. */
+.notice.error { background:var(--danger-bg); border-color:var(--danger-line); color:var(--danger-strong); }
+.notice .button { flex-shrink:0; text-decoration:none; }
+
+/* Small canvas & narrow embedded window optimizations (Gemini, Claude inline mode, mobile / foldable) */
+@container workspace (max-width: 620px) {
+  .topbar { padding: 0 8px; gap: 6px; }
+  .topbar .header-actions button[aria-label="展开"] { background: var(--green-soft); border: 1px solid var(--green-line); color: var(--green); }
+  .map-title { max-width: 64px; font-size: 12px; }
+  .map-bottom { bottom: 10px; right: 8px; gap: 6px; }
+  .draft-bar { padding: 3px 5px; gap: 3px; }
+  .draft-bar .button { padding: 4px 6px; font-size: 10px; }
+}
+/* The rail's own narrow tuning lives with the .plan-* block further down,
+   not here: these selectors are no more specific than the unconditional rules
+   that follow this point in the file, so a copy here would lose the cascade to
+   them and silently do nothing. */
+
+/* Short stages: the height limits, which are the only thing a short stage
+   changes. The `!important` is load-bearing — the selector is matched by an
+   unconditional rule later in the file — and .info-panel is restated at the
+   end of the file for the same reason rather than here. The layer panel is
+   not here on purpose: see its own rule for why it has no short-stage cap. */
+@container workspace (max-height: 520px) {
+  .point-inspector { max-height: min(72%, calc(100% - 60px)) !important; }
+  .map-bottom { bottom: 10px; }
+  .map-stage { --rail-top: 8px; --rail-right: 8px; }
+}
+
+/* A floating map button in its selected state: "在地图上添加" while picking a
+   spot, "对比路线" while the card is open. The floating background is a light
+   wash, so it must be replaced — not just layered under the white label — or
+   the button reads as white on white. Stated once, after every other rule that
+   touches these buttons, including the hover it also has to win. */
+.button.floating.primary,
+.button.floating[aria-pressed="true"] {
+  background: var(--green);
+  border-color: var(--green);
+  color: #fff;
+}
+.button.floating.primary:hover:not(:disabled),
+.button.floating[aria-pressed="true"]:hover:not(:disabled) {
+  background: var(--green-hover);
+  border-color: var(--green-hover);
+  color: #fff;
+}
+.button.floating.primary svg,
+.button.floating[aria-pressed="true"] svg { color: currentColor; }
+
+/* Account, library and share.
+
+   One panel, opened from one icon, holding nothing until it is asked: the map
+   is the page, and none of this may take space away from it before someone
+   wants it. The panel is positioned rather than anchored so the same component
+   works over the workspace and over a page that never got a map at all. */
+.access-panel { position: fixed; top: 58px; right: 12px; width: min(320px, calc(100vw - 24px)); max-height: min(560px, calc(100dvh - 76px)); overflow: auto; padding: 16px 18px 18px; background: var(--paper); border: 1px solid var(--line); border-radius: 8px; box-shadow: var(--shadow-panel); z-index: 120; scrollbar-width: thin; }
+.access-panel .dialog-heading { margin-bottom: 14px; }
+.access-panel .dialog-heading h2 { font-size: 16px; }
+.access-panel .form-actions { margin-top: 4px; justify-content: flex-start; }
+.access-panel .delivery-state, .panel-error { margin-bottom: 12px; }
+.account-email { font-size: 12px; font-weight: 600; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-bottom: 12px; }
+.panel-entries { display: flex; flex-direction: column; gap: 2px; }
+.panel-entry { display: flex; align-items: center; gap: 8px; width: 100%; text-align: left; padding: 10px 11px; border-radius: 6px; font-size: 12px; font-weight: 550; color: var(--ink); }
+.panel-entry:hover:not(:disabled) { background: var(--fill); }
+.panel-entry[aria-expanded="true"] { background: var(--green-soft); }
+.library-list { list-style: none; margin: 2px 0 8px; padding: 0 0 0 4px; display: flex; flex-direction: column; gap: 2px; }
+.library-list li { display: flex; align-items: center; gap: 4px; }
+.library-list a, .library-list li > span, .library-gone { flex: 1; min-width: 0; display: block; padding: 7px 8px; border-radius: 6px; font-size: 11px; color: var(--ink); text-decoration: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.library-list a:hover { background: var(--fill); }
+.library-gone { color: var(--subtle); }
+.library-list small { display: block; font-size: 9px; color: var(--subtle); margin-top: 3px; }
+/* Row actions live behind ⋯: 删除 sits next to 打开, and a delete icon a few
+   pixels from the title is a click nobody meant to make. The menu is narrower
+   than the top bar's — it opens inside a 320px panel, right-aligned to the row
+   so it never reaches past the panel's own padding. */
+.row-menu { position: relative; }
+.row-menu-dropdown { top: calc(100% + 4px); min-width: 196px; }
+.row-menu-dropdown a { display: flex; gap: 11px; align-items: center; padding: 11px; border-radius: 6px; font-size: 12px; color: var(--ink); text-decoration: none; }
+.row-menu-dropdown a:hover { background: var(--fill); }
+.row-menu-dropdown .danger:hover { background: var(--danger-bg); }
+.auth-form label { margin-bottom: 12px; font-size: 11px; }
+.auth-form input { font-size: 12px; padding: 9px 11px; }
+.auth-form .field-hint { margin: -6px 0 12px; }
+.auth-form .form-actions { justify-content: space-between; margin-top: 14px; }
+/* A value to hand over: its name, the value itself, and one icon that copies it.
+
+   The value is always visible and always selectable, because inside a host
+   webview the clipboard is usually refused (see `clipboard.ts`) and the field is
+   then the only way the text gets out. The label is a fixed column so the two
+   rows of the share dialog line up, and the value is monospace-ish small: a URL
+   with a token in it has to be readable in a 320px panel. */
+.copy-field { margin-bottom: 8px; }
+.copy-row { display: flex; gap: 8px; align-items: center; }
+.copy-label { flex-shrink: 0; font-size: 11px; font-weight: 550; color: var(--muted); }
+.copy-row input, .copy-row textarea { flex: 1; min-width: 0; font-size: 11px; padding: 8px 10px; }
+.copy-row textarea { line-height: 1.6; resize: vertical; }
+.copy-hint { font-size: 10px; line-height: 1.7; color: var(--warning-text); margin: 4px 0 0; }
+
+/* The links this map is already open through: one line each, and the action
+   that closes it. Dates and permission only — there is no address to show, so
+   the row is deliberately short rather than padded out with an id nobody reads. */
+.share-list { list-style: none; margin: 0 0 4px; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+.share-list li { display: flex; align-items: center; gap: 8px; padding: 4px 2px 4px 8px; border-radius: 6px; }
+.share-list li:hover { background: var(--fill); }
+.share-kind { font-size: 10px; font-weight: 650; color: var(--ink); background: var(--fill-soft); border: 1px solid var(--line-soft); border-radius: 4px; padding: 2px 6px; }
+.share-meta { flex: 1; min-width: 0; font-size: 11px; color: var(--subtle); }
+.share-list + .form-actions, .panel-empty + .form-actions { margin-top: 12px; }
+
+/* The credentials an MCP client can carry, and the config that uses one.
+
+   Behind a click inside a panel that is itself behind a click, because these are
+   bearer credentials in plain sight: each row is masked until it is asked for,
+   and only the selected row's notes are shown. The monospace value wraps and
+   breaks anywhere — a 40-odd character key must be fully readable in a 320px
+   panel, and an ellipsis on a credential is worse than a tall row. The snippet
+   scrolls sideways instead of wrapping: broken lines in JSON someone is about to
+   paste into a config file read as errors. */
+.panel-section { border-top: 1px solid var(--line); margin-top: 12px; padding-top: 8px; }
+.space-key { padding: 2px 4px 4px; }
+.space-key-warn { font-size: 10px; line-height: 1.7; color: var(--warning-text); background: var(--warning-bg); border: 1px solid var(--warning-line); border-radius: 6px; padding: 8px 10px; margin-bottom: 10px; }
+.space-key-warn code { font: 10px ui-monospace, SFMono-Regular, monospace; }
+.space-key-row { display: flex; gap: 6px; align-items: center; margin-bottom: 10px; }
+.space-key-row code { flex: 1; min-width: 0; font: 11px/1.6 ui-monospace, SFMono-Regular, monospace; color: var(--ink); background: var(--fill-soft); border: 1px solid var(--line-soft); border-radius: 6px; padding: 8px 9px; overflow-wrap: anywhere; }
+.space-key-label { font-size: 10px; letter-spacing: .8px; font-weight: 650; color: var(--subtle); margin: 14px 0 7px; }
+/* A caption may carry the one fact its list cannot show — e.g. that a share
+   link's address exists only in the response that minted it. */
+.space-key-label small { font-size: 10px; font-weight: 400; letter-spacing: 0; margin-left: 7px; }
+.space-key-code { font: 11px/1.7 ui-monospace, SFMono-Regular, monospace; color: var(--ink); background: var(--fill-soft); border: 1px solid var(--line-soft); border-radius: 6px; padding: 10px 11px; margin: 0; overflow-x: auto; scrollbar-width: thin; }
+.space-key .form-actions { margin-top: 10px; justify-content: flex-start; }
+.space-key .field-hint { margin: 0 0 6px; }
+/* One row per credential. Selecting one is what fills the snippet below, so the
+   selected row is marked the way a chosen option is elsewhere in this UI — the
+   brand tint, not a checkmark competing with the two icons already on the row. */
+.key-list { list-style: none; margin: 8px 0 10px; padding: 0; display: flex; flex-direction: column; gap: 3px; }
+.key-list li { display: flex; align-items: center; gap: 2px; }
+.key-row { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: flex-start; gap: 4px; padding: 7px 8px; border-radius: 6px; border: 1px solid transparent; text-align: left; }
+.key-row:hover { background: var(--fill); }
+.key-row[aria-pressed="true"] { background: var(--green-soft); border-color: var(--green-line); }
+.key-name { font-size: 11px; font-weight: 550; color: var(--ink); display: flex; align-items: baseline; gap: 6px; }
+.key-name small { font-size: 9px; font-weight: 400; color: var(--subtle); }
+.key-row code { display: block; width: 100%; font: 10px/1.6 ui-monospace, SFMono-Regular, monospace; color: var(--muted); overflow-wrap: anywhere; }
+.key-row[aria-pressed="true"] code { color: var(--ink); }
+
+/* Size-negotiation read-out. Only rendered when the deployment asks for it
+   (CARTULA_DIAGNOSTICS=1), which no default build does — see
+   src/web/adapters/diagnostics.ts. It sits over the map because it has to be
+   legible in a host card with no devtools to open, but it stays a panel in the
+   corner: the centred black-and-yellow treatment this briefly carried was for
+   one live investigation, and an alarm left armed after the fire is out is just
+   a thing people learn to ignore. */
+.size-diagnostics { position: fixed; top: 8px; left: 8px; z-index: 999; width: min(94%, 460px); max-height: 76%; overflow: auto; padding: 9px 11px; background: #141414f2; border: 1px solid #ffd400; border-radius: 8px; box-shadow: var(--shadow); font: 11px/1.6 ui-monospace, SFMono-Regular, Menlo, monospace; color: #ffe14d; white-space: pre-wrap; word-break: break-all; pointer-events: none; }
+.size-diagnostics-title { display: block; font-size: 11px; font-weight: 700; color: #141414; background: #ffd400; border-radius: 5px; padding: 4px 8px; margin-bottom: 8px; }
+.size-diagnostics b { font-weight: 750; color: #fff; }
+
+/* The panel lives outside `.workspace`, so it follows the viewport, not the
+   map container: on a narrow one it becomes a sheet instead of a corner card. */
+@media (max-width: 620px) { .access-panel { top: auto; bottom: 0; right: 0; left: 0; width: auto; max-height: 76dvh; border-radius: 8px 8px 0 0; } }
+html[data-compact="true"] .access-panel { top: 48px; max-height: calc(100dvh - 60px); }
+
+/* "Saved" and "handed over" are different states, and only the first one is
+   visible on the map. The entry appears next to the save state exactly while
+   there is something waiting, and disappears once it has been handed over —
+   it counts changes, it is not a permanent button. */
+.draft-bar .handoff-pending { font-weight: 650; }
+.pending-note { font-size: 11px; color: var(--warning-text); margin: 0 0 10px; line-height: 1.6; }
+
+/* ==========================================================================
+   2026-09 redesign: top-bar switch menus, floating plan list, day-grouped
+   detail panel, info feed, send popover. The map is the page; everything
+   else is one click away.
+   ========================================================================== */
+
+/* Top bar switch menus (色彩 / 语言 / 图例 / 提示) */
+.topbar-menus { display: flex; align-items: center; gap: 2px; }
+.top-menu { position: relative; }
+.top-menu-button { position: relative; }
+.top-menu-button.active { color: var(--green); background: var(--green-soft); }
+.top-menu-dropdown { top: calc(100% + 6px); min-width: 250px; max-height: min(70vh, 440px); overflow: auto; }
+.top-menu-dropdown.align-left { right: auto; left: 0; }
+.menu-check { width: 16px; display: inline-grid; place-items: center; color: var(--green); flex-shrink: 0; }
+.dropdown button .menu-check + span { min-width: 0; }
+.info-badge { position: absolute; top: -3px; right: -3px; min-width: 15px; height: 15px; padding: 0 3px; border-radius: 999px; background: var(--danger); color: #fff; font: 700 9px/15px system-ui, sans-serif; text-align: center; }
+/* The rail's badge overhangs the info button's corner, so it must not be what
+   the pointer hits when the button beside it is aimed at. */
+.map-info-badge { pointer-events: none; }
+
+/* Plan rail: the layer switcher, top-left. One dot per plan and 新建图层
+   under them; nothing else. The dots say everything the bar and cards this
+   replaced said: how many plans (one dot each, numbered), which are drawn (a
+   hidden plan's dot is hollow, dashed and faint), which is selected (filled
+   solid in its own colour), and which one's list is up (ringed). Names,
+   counts and actions are in the list, which opens beside the rail while the
+   pointer rests on a dot.
+
+   The column takes no pointer events — only the dots do — so it is never an
+   invisible lid over the map, and it scrolls without a visible bar when there
+   are more plans than the stage is tall. */
+/* The column scrolls, so it clips: the 8px of padding on every side is room
+   for the dots' shadows and rings, and the offsets put the dots themselves at
+   the rail's own corner rather than the padding. */
+.plan-rail { position: absolute; top: calc(var(--rail-top) - 8px); left: calc(var(--panel-inset) - 8px); z-index: 9; display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 8px; max-height: calc(100% - var(--rail-top) - var(--panel-bottom) + 8px); overflow-y: auto; scrollbar-width: none; pointer-events: none; }
+.plan-rail::-webkit-scrollbar { width: 0; }
+.plan-rail > * { pointer-events: auto; }
+/* A dot is its plan's colour at 26% over the map with the numeral in the
+   colour itself: translucent, so the map reads through, and edged by a hair
+   of the same colour so it holds together over a busy basemap. */
+.plan-dot { --dot-ink: #fff; display: grid; place-items: center; width: 30px; height: 30px; flex-shrink: 0; border: 1px solid color-mix(in srgb, var(--layer-color) 45%, transparent); border-radius: 50%; font: 650 12px/1 ui-monospace, SFMono-Regular, monospace; color: color-mix(in srgb, var(--layer-color) 78%, var(--ink)); background: color-mix(in srgb, var(--layer-color) 26%, transparent); box-shadow: var(--shadow); backdrop-filter: blur(8px); transition: background .15s, box-shadow .15s, opacity .15s; }
+.plan-dot:hover:not(:disabled) { background: color-mix(in srgb, var(--layer-color) 42%, transparent); }
+/* The selected plan is solid: the plan colour, and whichever ink reads on it
+   (dotInk in LayerPanel.tsx). A white ring outside keeps a solid dot from
+   merging with a route drawn in the same colour underneath it. */
+.plan-dot.active { color: var(--dot-ink); border-color: transparent; background: var(--layer-color); box-shadow: 0 0 0 2px var(--paper), var(--shadow); }
+.plan-dot.active:hover:not(:disabled) { background: var(--layer-color); }
+/* The one whose list is up: ringed in its colour, outside the white. */
+.plan-dot.open { box-shadow: 0 0 0 2px var(--paper), 0 0 0 4px color-mix(in srgb, var(--layer-color) 55%, transparent), var(--shadow); }
+/* Hidden: hollow, dashed and faint — still a plan, just not drawn right now. */
+.plan-dot.hidden-layer { border-style: dashed; border-color: color-mix(in srgb, var(--layer-color) 65%, transparent); color: color-mix(in srgb, var(--layer-color) 55%, var(--subtle)); background: color-mix(in srgb, var(--paper) 55%, transparent); opacity: .62; }
+.plan-dot.hidden-layer.active { background: color-mix(in srgb, var(--layer-color) 45%, var(--paper)); }
+.plan-dot.hidden-layer:hover:not(:disabled) { opacity: .95; }
+/* 新建图层 sits under the numbered set, unnumbered and in chrome grey rather
+   than a plan colour, so it never reads as the next plan. */
+.plan-dot-new { --layer-color: var(--muted); width: 26px; height: 26px; margin-top: 2px; border-color: var(--line); color: var(--muted); background: var(--surface-float); }
+.plan-dot-new:hover:not(:disabled) { background: var(--paper); color: var(--green); border-color: var(--green-line); }
+/* The same dot at heading size, beside the plan's name in its list. */
+.plan-dot.small { width: 22px; height: 22px; font-size: 10px; border-color: transparent; color: var(--dot-ink); background: var(--layer-color); box-shadow: none; backdrop-filter: none; }
+
+/* A right-hand dock is open, so the two of them share. Only the panels that
+   actually take --panel-width count: the send popover has its own width and
+   sits bottom-right, clear of a top-docked detail panel at every width this
+   applies to. */
+.map-stage:has(.info-panel),
+.map-stage:has(.point-inspector),
+.map-stage:has(.point-popover),
+.map-stage:has(.leg-popover),
+.map-stage:has(.changes-drawer) { --panel-share: 2; }
+
+/* Day groups: collapsible parents over the point rows.
+
+   A group carries its day's colour on the map twice over, because the two jobs
+   are different. The identifier is the left edge, at full strength: it is the
+   only place the colour is shown as itself, so it is the part that can be
+   matched against a line on the canvas. The background is a 12% wash of the
+   same colour against the paper — enough to group the rows at a glance, light
+   enough that the row text is unharmed. 12% was chosen against the day ladder's
+   deepest shade (lightness 26 in dayColors.ts); on the Lark ink it leaves the
+   row title and the day heading at 12.4:1, where the sage they replaced sat at
+   6.0:1 and 5.1:1. The percentage stays at 12 anyway: it is sized to group the
+   rows, not to be the darkest wash it can get away with. A solid fill was never
+   on the table —
+   the day colours are chosen to be legible as lines on a basemap, not as
+   backgrounds for 11px text.
+
+   未排期 stops have no day, so they get no day colour: the same geometry in the
+   panel's own grey, which reads as "not on the ladder" rather than as a
+   fifteenth day. That is the default here, and a dated group overrides it. */
+.day-group { --day-color: var(--line-strong); background: color-mix(in srgb, var(--day-color) 12%, var(--paper)); border-left: 3px solid var(--day-color); border-radius: 0 6px 6px 0; }
+.day-group + .day-group { margin-top: 3px; }
+.day-group-head { display: flex; align-items: center; gap: 6px; width: 100%; padding: 5px 10px; font-size: 10px; font-weight: 650; color: var(--ink); text-align: left; }
+/* Hover and selection deepen the group's own wash instead of replacing it with
+   the panel's green: an opaque highlight would take the day colour off exactly
+   the row being worked on. 16% and 20% were the point where the old sage text still
+   cleared 4.5:1 against the deepest day shade; the ink now clears 10.4:1 even
+   at 20%, so these two numbers are kept for the feel they had, not because the
+   contrast still binds them. */
+.day-group-head:hover { background: color-mix(in srgb, var(--day-color) 16%, var(--paper)); }
+.day-group .point-row:hover, .day-group .point-row.selected { background: color-mix(in srgb, var(--day-color) 20%, var(--paper)); }
+/* Secondary text keeps the ratio it had on bare paper rather than the one the
+   wash leaves it: at 9px these are already the faintest thing in the panel.
+   4.3:1 on the wash and 3.6:1 on a selected row: still the weakest ratio in
+   the panel, and still well above the 2.9:1 / 2.4:1 the sage grey left here. */
+.day-group .point-text small { color: var(--muted); }
+.day-group-chevron { transition: transform .15s; }
+.day-group:not(.open) .day-group-chevron { transform: rotate(-90deg); }
+.day-group-count { margin-left: auto; font-weight: 500; color: var(--muted); }
+
+/* Info feed: everything the planning process has to say, behind one icon.
+   It hangs off that icon — top-right, under the tool rail — rather than
+   opening across the map on the far side from the control that opened it. */
+.info-panel { position: absolute; top: var(--panel-top); right: var(--panel-right); width: var(--panel-width); max-width: calc(100% - 2 * var(--panel-inset)); max-height: var(--panel-max-height);display: flex; flex-direction: column; background: var(--surface); border: 1px solid var(--line); border-radius: 8px; box-shadow: var(--shadow-panel); z-index: 12; backdrop-filter: blur(12px); }
+.info-panel .panel-heading { border-bottom: 1px solid var(--line-soft); }
+.info-item { display: flex; gap: 10px; padding: 10px 12px; border-bottom: 1px solid var(--line-soft); }
+.info-item:last-child { border-bottom: 0; }
+.info-item-icon { color: var(--green); flex-shrink: 0; margin-top: 2px; }
+.info-item-body { min-width: 0; flex: 1; }
+.info-item-body h3 { font-size: 12px; font-weight: 650; color: var(--ink); margin: 3px 0 4px; }
+.info-item-body p { font-size: 11px; line-height: 1.7; color: var(--muted); overflow-wrap: anywhere; }
+.info-item-body .button { margin-top: 8px; }
+.info-item > .icon-button { align-self: flex-start; }
+
+/* Send popover: description + round summary + one send, bottom-right */
+.send-popover { position: absolute; right: var(--panel-right); bottom: var(--panel-bottom); width: min(340px, calc(100% - 2 * var(--panel-inset))); max-height: min(70%, 480px); overflow: auto; padding: 14px 16px 16px; background: var(--surface); border: 1px solid var(--line); border-radius: 8px; box-shadow: var(--shadow-panel); z-index: 60; }
+.send-popover .dialog-heading { margin-bottom: 8px; }
+.send-popover h2 { font-size: 15px; font-weight: 650; }
+.send-popover label { font-size: 10px; }
+.send-popover textarea { font-size: 12px; }
+.send-badge { display: inline-grid; place-items: center; min-width: 15px; height: 15px; padding: 0 4px; margin-left: 4px; border-radius: 999px; background: #fff; color: var(--green); font: 700 9px/15px system-ui, sans-serif; }
+
+/* Legend card, inside the 图例 top-bar menu */
+.legend-card { padding: 4px 6px 6px; }
+.legend-card .legend-note { margin: 6px 0 0; }
+.leg-mode { display: inline-flex; align-items: center; gap: 2px; padding: 3px; background: var(--fill); border: 1px solid var(--line); border-radius: 8px; margin-bottom: 6px; }
+.leg-mode button { padding: 5px 9px; border-radius: 6px; font-size: 10px; font-weight: 600; color: var(--muted); white-space: nowrap; }
+.leg-mode button:hover:not(.checked) { background: var(--paper); }
+.leg-mode button.checked { background: var(--green); color: #fff; }
+.legend-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; font-size: 10px; color: var(--muted); margin-bottom: 6px; }
+.legend-title { font-size: 9px; color: var(--subtle); letter-spacing: .5px; width: 100%; }
+.legend-item { display: inline-flex; align-items: center; gap: 5px; }
+.legend-item i { width: 14px; height: 4px; border-radius: 2px; display: inline-block; }
+.legend-note { font-size: 9px; color: var(--subtle); line-height: 1.7; margin-top: 6px; }
+/* The second way into the credits, next to the other things the legend
+   explains about the map. The first is 更多 → 地图数据与开源声明. */
+.legend-credits { margin-top: 8px; font-size: 9px; color: var(--green); text-decoration: underline; text-underline-offset: 2px; }
+
+/* Basemap credits and third-party licences, off the map and inside a dialog */
+.credits h3 { font-size: 11px; font-weight: 650; color: var(--ink); letter-spacing: .3px; margin: 16px 0 7px; }
+.credits h3:first-child { margin-top: 0; }
+.credit-line { font-size: 12px; line-height: 1.75; color: var(--ink); overflow-wrap: anywhere; }
+.credit-note { font-size: 10px; line-height: 1.8; color: var(--subtle); margin-top: 6px; }
+.credits a { color: var(--green); }
+.credit-list { display: flex; flex-direction: column; gap: 7px; }
+.credit-list li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; font-size: 11px; color: var(--muted); }
+.credit-list li a { font-weight: 600; }
+.credit-list li small { color: var(--subtle); font-size: 9px; }
+
+/* Floating icon buttons (info / locate) */
+/* Floating icon buttons (info / locate). `position:relative` is what anchors
+   .map-info-badge to the info button: without it the badge resolved against
+   .map-stage and landed on whichever icon happened to sit at that corner. */
+.icon-button.floating { position: relative; box-shadow: var(--shadow); background: var(--surface-float); border: 1px solid var(--line); width: var(--rail-size, 37px); height: var(--rail-size, 37px); border-radius: var(--rail-radius, 8px); }
+.icon-button.floating:hover:not(:disabled) { background: #fff; color: var(--green); }
+.icon-button.floating.active { color: var(--green); background: var(--green-soft); border-color: var(--green-line); }
+
+/* The map's top-right rail is four buttons from three sources: our info and
+   locate buttons, plus zoom from either MapLibre's NavigationControl or the SVG
+   fallback. Only the geometry below makes them read as one stack — each source
+   is positioned independently, so they share the --rail-* variables on
+   .map-stage rather than repeated literals. The zoom pair is last in the rail,
+   so it starts below our two buttons (--rail-zoom-top). */
+.svg-zoom, .maplibregl-ctrl-top-right { position: absolute; top: var(--rail-zoom-top) !important; right: var(--rail-right) !important; display: flex; flex-direction: column; align-items: center; gap: var(--rail-gap); z-index: 3; }
+.svg-zoom > button, .maplibregl-ctrl-top-right .maplibregl-ctrl-group button { width: var(--rail-size); height: var(--rail-size); border: 1px solid var(--line); border-radius: var(--rail-radius); box-shadow: var(--shadow); background: var(--surface-float); color: var(--muted); }
+.svg-zoom > button { display: grid; place-items: center; padding: 0; font: 600 15px/1 system-ui, sans-serif; }
+.svg-zoom > button:hover { background: #fff; color: var(--green); }
+/* MapLibre floats its control group, margins it, and joins the two zoom buttons
+   into one bordered card. All of that has to come off for the pair to sit on the
+   rail's axis as two separate buttons, and the focus rules below re-state the
+   rail's shape because MapLibre's own :focus rules out-specify the plain
+   selector above and would otherwise snap the radius back to its 4px card. */
+.maplibregl-ctrl-top-right .maplibregl-ctrl { margin: 0; float: none; }
+.maplibregl-ctrl-top-right .maplibregl-ctrl-group { display: flex; flex-direction: column; gap: var(--rail-gap); border: 0; border-radius: 0; box-shadow: none !important; background: transparent !important; }
+.maplibregl-ctrl-top-right .maplibregl-ctrl-group button + button { border-top: 1px solid var(--line); }
+.maplibregl-ctrl-top-right .maplibregl-ctrl-group button:hover:not(:disabled) { background: #fff; }
+.maplibregl-ctrl-top-right .maplibregl-ctrl-group button:focus { border-radius: var(--rail-radius); box-shadow: var(--shadow); }
+
+.transport-icon { display: inline; vertical-align: -2px; margin-right: 4px; color: var(--green); }
+.point-number.point-mark { color: #fff; overflow: hidden; }
+.point-mark-dot { width: 8px; height: 8px; border-radius: 50%; background: #fff; display: block; }
+
+/* Narrow stages (the 720px host card lives here): panels get narrower and the
+   insets tighten, but they stay docked to a side. A panel spanning the stage
+   would cover the map, and the map is what the panel is annotating.
+
+   215px is set by the worst case rather than by one panel. On a 720px card three
+   pieces of chrome are on the stage at once: the 34px tab strip at the left
+   inset, the detail panel beside it, and a right-docked panel — the info feed,
+   or the point popover, which does not close the detail panel that opened it. At
+   215 those cost 34 + 215 + 215 and leave the map a 184px band between them,
+   with the tool rail keeping its own 44px column outboard of the right panel.
+   250px left 118px, and 230 left 154: both are gutters rather than maps. A
+   single panel — the common case — still leaves over 450px. */
+@container workspace (max-width: 900px) {
+  .map-stage { --panel-bottom: 66px; --panel-inset: 10px; --panel-ideal: 264px; }
+  /* The list is 264px here, and its tools row loses 14px the totals need:
+     855 km 路由 · 10小时50分 驾车 is 137px, and five 22px buttons left it 123. */
+  .panel-tools .icon-button { width: 20px; height: 20px; }
+  /* Narrow stages lift the panels over the plan rail (z 9), which they now
+     sit close enough to touch. The popover stays above the info feed here for
+     the same reason it does at full width. */
+  .layer-panel { z-index: 55; }
+  .info-panel { z-index: 57; }
+  .point-inspector { z-index: 58; }
+}
+
+/* Narrower still, and still side-docked. No --panel-ideal here: below this
+   width the 120px map floor in --panel-width is always the binding term — at
+   620px it already yields 197px — so a smaller preferred width would be a
+   number that never applies. The rail's dots shrink a step so the list beside
+   them keeps the width. */
+@container workspace (max-width: 620px) {
+  .plan-dot { width: 26px; height: 26px; font-size: 11px; }
+  .plan-dot-new { width: 22px; height: 22px; }
+  .map-stage { --detail-left: calc(var(--panel-inset) + 38px); }
+}
+
+/* Short stages, restated after the .info-panel rule it retunes for the same
+   cascade reason. */
+@container workspace (max-height: 520px) {
+  .info-panel { max-height: min(60%, calc(100% - 120px)); }
+}
+
+/* Phone portrait: the one width where side-by-side is not a choice. Below this
+   a 240px panel leaves the map a strip, so panels become bottom sheets — the
+   arrangement that is wrong at 720px and right at 390px. They stop short of the
+   tool rail and the plan toggle, so the way out is never behind a sheet. */
+@container workspace (max-width: 480px) {
+  /* `width:auto` against both pinned edges is what retires the two-column
+     clamp: sheets stack, so there is no second column to reserve room for. */
+  .layer-panel, .info-panel, .point-inspector, .changes-drawer, .send-popover {
+    top: auto; bottom: var(--panel-bottom); left: var(--panel-inset); right: var(--panel-inset);
+    width: auto; max-width: none; max-height: min(52%, calc(100% - var(--panel-top) - var(--panel-bottom)));
+  }
+  .point-inspector, .changes-drawer, .send-popover { z-index: 60; }
+}
+
+
+
+/* Dragging a stop between day groups.
+   The list groups stops by `point.day`, so the group a row is dropped into is
+   what decides which day it belongs to — these three rules are the feedback
+   that makes that target legible while the pointer is moving. */
+.point-row.dragging { opacity: .45; }
+.day-group.drop-target {
+  outline: 2px dashed var(--green); outline-offset: -2px;
+  background: color-mix(in srgb, var(--green) 10%, var(--paper));
+}
+/* An empty day keeps a labelled body so it stays a reachable drop target: a
+   target that collapses to nothing cannot be aimed at. */
+.day-group-empty { margin: 0; padding: 10px 12px; font-size: 10px; line-height: 1.7; color: var(--subtle); }
+
+/* The one control in the share dialog that changes what the link can do, so it
+   reads as a choice rather than a detail: the consequence sits under the label
+   and swaps with the box, and the row is large enough to be an obvious target. */
+.share-permission { display: flex; gap: 10px; align-items: flex-start; padding: 12px 13px; margin-bottom: 16px; border: 1px solid var(--line); border-radius: 8px; background: var(--fill-soft); font-size: 12px; font-weight: 550; cursor: pointer; }
+.share-permission input { margin-top: 2px; flex-shrink: 0; }
+.share-permission small { display: block; margin-top: 5px; font-size: 10px; line-height: 1.75; font-weight: 400; color: var(--subtle); }
+
+/* TopBar history & version controls */
+.topbar-history { display: flex; align-items: center; gap: 3px; }
+.topbar-version-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  font-weight: 550;
+  height: 28px;
+  padding: 0 8px;
+  border-radius: 6px;
+  color: var(--muted);
+  border: 1px solid var(--line-soft);
+  background: var(--fill-soft, transparent);
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+.topbar-version-button:hover {
+  background: var(--fill);
+  color: var(--ink);
+  border-color: var(--line);
+}
+.topbar-version-button svg {
+  flex-shrink: 0;
+  color: var(--subtle);
+}
+.topbar-version-button:hover svg {
+  color: var(--ink);
+}
+
+/* Floating Agent action button in map bottom-right: minimal interference */
+.agent-send-fab {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  background: var(--green);
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  box-shadow: 0 4px 14px rgba(24, 94, 79, 0.32), var(--shadow);
+  cursor: pointer;
+  padding: 0;
+  transition: transform 0.15s ease, background 0.15s ease, box-shadow 0.15s ease;
+}
+.agent-send-fab:hover:not(:disabled) {
+  background: #145244;
+  transform: translateY(-2px);
+  box-shadow: 0 6px 18px rgba(24, 94, 79, 0.42);
+}
+.agent-send-fab:active:not(:disabled) {
+  transform: translateY(0);
+}
+.agent-send-fab:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  box-shadow: var(--shadow);
+}
+.agent-send-fab .send-badge {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  margin-left: 0;
+  min-width: 17px;
+  height: 17px;
+  border-radius: 999px;
+  background: var(--danger, #df3434);
+  color: #fff;
+  font: 700 9px/17px system-ui, sans-serif;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.25);
+}
+
+/* ------------------------------------------------------------------ cards
+   The card for one stop, one candidate spot or one leg (PointCard.tsx). One
+   template with fixed slots, in this order: what it is and which plan
+   (heading) · the marker and the name (title) · facts as chips · picture ·
+   note · planning intent · the way on · actions. A field the data does not
+   carry leaves no gap, and nothing an Agent writes changes the arrangement. */
+.point-popover, .leg-popover { padding: 10px 12px 12px; }
+.card-heading { display: flex; align-items: center; gap: 6px; min-height: 26px; }
+.card-kind { flex: 1; min-width: 0; display: inline-flex; align-items: center; gap: 6px; font-size: 10px; font-weight: 650; letter-spacing: .5px; color: var(--muted); white-space: nowrap; overflow: hidden; }
+.card-kind > i { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; background: var(--card-color); box-shadow: 0 0 0 2.5px color-mix(in srgb, var(--card-color) 20%, transparent); margin-right: 2px; }
+.card-kind .card-layer { min-width: 0; overflow: hidden; text-overflow: ellipsis; font-weight: 550; letter-spacing: 0; color: var(--subtle); }
+.card-kind .card-layer::before { content: "·"; margin: 0 6px; color: var(--line-strong); }
+.card-tools { display: flex; align-items: center; gap: 1px; flex-shrink: 0; margin-right: -4px; }
+.card-tools .icon-button { width: 26px; height: 26px; }
+.card-title { display: flex; align-items: center; gap: 9px; margin-top: 6px; min-width: 0; }
+.point-popover h2, .leg-popover h2,
+.point-inspector[data-collapsed="true"] .card-title h2 { margin: 0; font-size: 16px; line-height: 1.3; letter-spacing: -.3px; font-weight: 650; min-width: 0; overflow-wrap: anywhere; }
+/* The marker, as the map draws it: a numbered disc or a pictogram, in its
+   halo. What the card is about is the same shape on the map and in the card. */
+.card-glyph { width: 26px; height: 26px; border-radius: 50%; display: inline-grid; place-items: center; flex-shrink: 0; color: #fff; box-shadow: 0 0 0 2px #fff, 0 0 0 4.5px color-mix(in srgb, var(--glyph-color, #8f959e) 22%, transparent); }
+.card-glyph.number { font: 700 11.5px/1 Inter, "PingFang SC", system-ui, sans-serif; letter-spacing: -.3px; }
+.card-glyph svg { display: block; }
+.card-glyph-dot { width: 8px; height: 8px; border-radius: 50%; background: #fff; display: block; }
+.card-chips { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 10px; }
+.chip { display: inline-flex; align-items: center; gap: 4px; height: 21px; padding: 0 8px; border-radius: 999px; font-size: 10.5px; font-weight: 600; line-height: 1; white-space: nowrap; background: var(--fill); color: var(--muted); border: 1px solid transparent; }
+.chip.day { background: color-mix(in srgb, var(--chip-color) 13%, white); border-color: color-mix(in srgb, var(--chip-color) 28%, white); color: color-mix(in srgb, var(--chip-color) 78%, black); }
+.chip.warn { background: var(--warning-bg); border-color: var(--warning-line); color: var(--warning-text); }
+.chip.fixed { background: var(--green-soft); border-color: var(--green-line); color: var(--green); }
+.chip.flag { background: var(--info-bg); border-color: var(--info-line); color: var(--info); }
+.card-media { margin: 12px 0 0; border-radius: 9px; overflow: hidden; background: var(--fill-soft); }
+.card-media img { display: block; width: 100%; height: 150px; object-fit: cover; }
+.card-media.compact img { height: 118px; }
+/* Loading, the picture takes no room — a card must not hold a blank box for
+   a link that may never answer. Failed, it is not rendered at all. */
+.card-media[data-state="loading"] { height: 0; margin: 0; }
+.card-note { margin: 12px 0 0; font-size: 12px; line-height: 1.7; color: var(--ink); overflow-wrap: anywhere; white-space: pre-line; }
+.card-note.clamped { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.card-more { display: inline-block; margin-top: 3px; padding: 0; font-size: 11px; font-weight: 600; color: var(--green); }
+.card-more:hover { text-decoration: underline; }
+.card-intent { margin: 12px 0 0; padding: 8px 10px 9px; border-radius: 8px; background: var(--warning-bg); border: 1px solid var(--warning-line); }
+.card-intent .eyebrow { color: var(--warning-text); }
+.card-intent p { margin: 3px 0 0; font-size: 12px; line-height: 1.65; color: var(--warning-text); overflow-wrap: anywhere; white-space: pre-line; }
+.card-context { display: flex; align-items: flex-start; gap: 6px; margin: 12px 0 0; padding-top: 10px; border-top: 1px solid var(--line-soft); font-size: 11.5px; line-height: 1.55; color: var(--muted); }
+.card-context .transport-icon { margin-top: 2px; }
+.card-context b { color: var(--ink); font-weight: 600; }
+.card-actions { margin-top: 14px; gap: 7px; }
+.card-actions .button.compact { min-height: 31px; }
+.card-readonly { display: flex; align-items: center; gap: 5px; margin: 12px 0 0; padding-top: 10px; border-top: 1px solid var(--line-soft); font-size: 10.5px; color: var(--subtle); }
+.leg-facts { display: grid; grid-template-columns: max-content 1fr; gap: 6px 12px; margin: 12px 0 0; font-size: 11.5px; line-height: 1.5; }
+.leg-facts dt { color: var(--subtle); }
+.leg-facts dd { margin: 0; color: var(--ink); overflow-wrap: anywhere; }
+.leg-facts small { font-size: 10px; color: var(--subtle); margin-left: 4px; }
+.leg-facts .muted { color: var(--subtle); }

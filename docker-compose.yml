@@ -1,0 +1,41 @@
+services:
+  cartula:
+    image: cartula:${CARTULA_TAG:-0.4.12}
+    pull_policy: never
+    container_name: cartula
+    restart: unless-stopped
+    user: "${CARTULA_UID:-1000}:${CARTULA_GID:-1000}"
+    ports:
+      - "${CARTULA_BIND:-127.0.0.1}:${CARTULA_PORT:-3910}:3900"
+    environment:
+      PORT: 3900
+      PUBLIC_URL: ${PUBLIC_URL:-http://localhost:3910}
+      DATABASE_PATH: /app/data/cartula.sqlite
+      BASEMAP_STYLE: ${BASEMAP_STYLE:-}
+      TILE_URL: ${TILE_URL:-}
+      TILE_UPSTREAM_URL: ${TILE_UPSTREAM_URL:-}
+      TILE_PROXY_URL: ${TILE_PROXY_URL:-}
+      TILE_ATTRIBUTION: ${TILE_ATTRIBUTION:-© OpenStreetMap contributors}
+      OSRM_URL: ${OSRM_URL:-https://router.project-osrm.org}
+      OSRM_PROXY_URL: ${OSRM_PROXY_URL:-}
+      MAX_MAPS: ${MAX_MAPS:-1000}
+      CARTULA_BUILD: ${CARTULA_BUILD:-}
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-}
+    volumes:
+      - ./data:/app/data
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 2g
+    cpus: 2
+    pids_limit: 128
+    stop_grace_period: 20s
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "3"

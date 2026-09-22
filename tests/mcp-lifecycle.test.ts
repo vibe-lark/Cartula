@@ -1,0 +1,30 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { AppBridge } from '@modelcontextprotocol/ext-apps/app-bridge';
+import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
+import { McpAdapter, defaultHostApp } from '../src/web/adapters/mcp.js';
+import type { AdapterUpdate } from '../src/web/adapters/types.js';
+
+test('Host teardown is acknowledged, stops polling and ignores late results', async t => {
+  t.mock.timers.enable({ apis: ['setInterval'] });
+  const app = defaultHostApp();
+  const bridge = new AppBridge(null, { name: 'teardown-test', version: '1' }, {}, { hostContext: { containerDimensions: { width: 900, height: 600 } } });
+  const [host, view] = InMemoryTransport.createLinkedPair();
+  const connect = app.connect.bind(app);
+  app.connect = (_transport, options) => connect(view, options);
+  const calls = t.mock.method(app, 'callServerTool', async () => { throw new Error('unexpected poll'); });
+  const adapter = new McpAdapter(app);
+  t.after(async () => { adapter.dispose(); await bridge.close(); });
+  bridge.oninitialized = () => { void bridge.sendToolResult({ content: [], _meta: { cartula: { map: { id: 'map', version: 1, layers: [] } } } }); };
+  await bridge.connect(host);
+  const updates: AdapterUpdate[] = [];
+  await adapter.initialize(update => updates.push(update));
+  assert.deepEqual(await bridge.teardownResource({}, { timeout: 1000 }), {});
+  assert.equal(updates.at(-1)?.closed, true);
+  t.mock.timers.tick(21_000);
+  await bridge.sendToolResult({ content: [], _meta: { cartula: { map: { id: 'late-map', version: 2, layers: [] } } } });
+  assert.equal(updates.at(-1)?.closed, true);
+  assert.equal(calls.mock.callCount(), 0);
+  assert.equal((await adapter.declarePreferredSize()).status, 'skipped');
+  await assert.rejects(adapter.access.copy!(), /还没有准备好/);
+});
