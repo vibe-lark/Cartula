@@ -103,7 +103,7 @@ export default function TopBar(props: TopBarProps) {
     <div className={`save-state ${props.connection}`} role="status"><i/>{props.saveLabel}</div>
     <div className="topbar-history">
       <button type="button" className="icon-button" aria-label="撤销" title="撤销 (Ctrl+Z)" disabled={!props.editable || props.busy || !props.canUndo} onClick={props.onUndo}><Undo2 size={16}/></button>
-      <button type="button" className="icon-button" aria-label="重做" title="重做 (Ctrl+Y)" disabled={!props.editable || props.busy || !props.canRedo} onClick={props.onRedo}><Redo2 size={16}/></button>
+      <button type="button" className="icon-button" aria-label="重做" title="重做 (Ctrl+Y / Ctrl+Shift+Z)" disabled={!props.editable || props.busy || !props.canRedo} onClick={props.onRedo}><Redo2 size={16}/></button>
       <button type="button" className="button compact quiet topbar-version-button" aria-label={props.changesLabel} title="查看最近修改" onClick={props.onChanges}>
         <History size={14}/><span>{props.changesLabel}</span>
       </button>

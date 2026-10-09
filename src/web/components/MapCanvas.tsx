@@ -9,7 +9,7 @@ import SvgMapCanvas from './SvgMapCanvas.js';
 import { watchMapWorker, type MapWorkerState } from '../map-worker-health.js';
 import { PIN_ICON_MAPPING, PIN_SIZE, pinExtent, pinIconAtlas } from './markerIcons.js';
 import { applyBasemapPoiIcons, pinAtlasIcon, poiTheme } from './poiIcons.js';
-import { localizeBasemap, type MapLanguage, type MapStyle } from './preferences.js';
+import { basemapPlaceName, localizeBasemap, type MapLanguage, type MapStyle } from './preferences.js';
 import { layoutAnnotations, type PlacedLegLabel } from './labels.js';
 import { ROUTE_OPACITY, ROUTE_WIDTH, backdropColor, backdropSegmentStyle, buildLegAnnotations, legKey, planSummary, pointColor, segmentColor, segmentStyle, type LegAnnotation, type LegLabelMode, type LegRef, type RouteColorMode } from './legs.js';
 import {
@@ -52,6 +52,8 @@ export interface MapCanvasProps {
   offline: boolean;
   /** Camera framing target only. */
   fitLayerId: string | null;
+  /** Narrows the framing to these stops of `fitLayerId` — one itinerary day. */
+  fitPointIds?: readonly string[] | null;
   fitKey: number;
   /** On-map leg annotations: auto density, everything, or hidden. */
   legMode: LegLabelMode;
@@ -78,7 +80,10 @@ export interface MapCanvasProps {
    */
   onAttribution?: (credits: string[]) => void;
   onMove: (layerId: string, pointId: string, at: Coord) => void;
-  onAdd: (at: Coord) => void;
+  /** A spot picked for a new stop; `name` is the basemap label under it, when there is one. */
+  onAdd: (at: Coord, name?: string) => void;
+  /** The stop under the pointer on the map, so the open list can mark its row. */
+  onHoverPoint?: (point: MapCanvasSelection | null) => void;
   insertFrom?: Coord | null;
   insertTo?: Coord | null;
   hoverAt?: Coord | null;
@@ -290,13 +295,13 @@ export default function MapCanvas(props: MapCanvasProps): React.JSX.Element {
   const [hoveredPlanId, setHoveredPlanId] = useState<string>();
 
   // Long-lived map handlers read the latest callbacks through refs.
-  const cb = useRef({ onSelect, onSelectLeg, onActivateLayer, onAttribution, onMove, onAdd, onHoverAt });
-  cb.current = { onSelect, onSelectLeg, onActivateLayer, onAttribution, onMove, onAdd, onHoverAt };
+  const cb = useRef({ onSelect, onSelectLeg, onActivateLayer, onAttribution, onMove, onAdd, onHoverAt, onHoverPoint: props.onHoverPoint });
+  cb.current = { onSelect, onSelectLeg, onActivateLayer, onAttribution, onMove, onAdd, onHoverAt, onHoverPoint: props.onHoverPoint };
   const mode = useRef({ adding, editable, relocating });
   mode.current = { adding, editable, relocating };
   const dragRef = useRef<{ key: string; layerId: string; pointId: string; at: Coord } | null>(null);
 
-  const bounds = useMemo(() => focusBounds(layers, fitLayerId), [layers, fitLayerId]);
+  const bounds = useMemo(() => focusBounds(layers, fitLayerId, props.fitPointIds), [layers, fitLayerId, props.fitPointIds]);
   const boundsRef = useRef(bounds);
   boundsRef.current = bounds;
   const hasFitted = useRef(false);
@@ -460,7 +465,26 @@ export default function MapCanvas(props: MapCanvasProps): React.JSX.Element {
 
     const onClick = (e: maplibregl.MapMouseEvent): void => {
       if (!mode.current.editable) return;
-      if (mode.current.adding || mode.current.relocating) cb.current.onAdd([e.lngLat.lng, e.lngLat.lat]);
+      if (!mode.current.adding && !mode.current.relocating) return;
+      // A new stop dropped on a labelled place takes that label as its
+      // suggested name. Nearest first, within a fingertip of the click.
+      let name: string | undefined;
+      if (mode.current.adding) {
+        try {
+          const r = 8;
+          const near = map.queryRenderedFeatures([[e.point.x - r, e.point.y - r], [e.point.x + r, e.point.y + r]])
+            .filter(feature => feature.layer?.type === 'symbol')
+            .map(feature => {
+              const g = feature.geometry;
+              const c = g.type === 'Point' ? map.project(g.coordinates as [number, number]) : e.point;
+              return { feature, d: Math.hypot(c.x - e.point.x, c.y - e.point.y) };
+            })
+            .sort((a, b) => a.d - b.d)
+            .map(({ feature }) => ({ sourceLayer: feature.sourceLayer, properties: feature.properties }));
+          name = basemapPlaceName(near, languageRef.current ?? 'zh');
+        } catch { /* no basemap labels to read */ }
+      }
+      cb.current.onAdd([e.lngLat.lng, e.lngLat.lat], name);
     };
     const onMouseMove = (e: maplibregl.MapMouseEvent): void => {
       if (mode.current.adding || mode.current.relocating) cb.current.onHoverAt?.([e.lngLat.lng, e.lngLat.lat]);
@@ -613,6 +637,13 @@ export default function MapCanvas(props: MapCanvasProps): React.JSX.Element {
     }
     return out;
   }, [ordered, activeLayerId, selected, colorMode, isBackdrop]);
+
+  // Hover runs both ways: a list row lights its leg here, and a marker here
+  // tells the workspace, so the open list can mark and reveal its row.
+  useEffect(() => {
+    const node = hoveredKey ? nodes.find(n => n.key === hoveredKey) : undefined;
+    cb.current.onHoverPoint?.(node ? { layerId: node.layerId, pointId: node.point.id } : null);
+  }, [hoveredKey]);
 
   /** Each route layer's drawn line, flattened — the input to a comparison. */
   const planLines = useMemo(() => {

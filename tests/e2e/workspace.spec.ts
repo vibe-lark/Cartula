@@ -97,8 +97,12 @@ test('Agent data renders with real tiles; user edits and imports become semantic
   await editFirstNote(page, 'Warning: 这里补给后再出发');
   await expect.poll(async () => (await readMap(request, map)).layers[0].points[0].note).toBe('Warning: 这里补给后再出发');
   await openLayer(page, 'lesser-khingan');
+  // 哈尔滨 is day 1's only stop, so 下移 carries it into day 2 — the next row
+  // down on screen — instead of sliding it past 伊春 while it stayed on day 1,
+  // which the list could not show and the map drew as a zigzag.
   await page.getByRole('button', { name: '下移 哈尔滨', exact: true }).click();
-  await expect.poll(async () => (await readMap(request, map)).layers[0].points[1].id).toBe('harbin');
+  await expect.poll(async () => (await readMap(request, map)).layers[0].points.find(point => point.id === 'harbin')?.day).toBe(2);
+  await expect.poll(async () => (await readMap(request, map)).layers[0].points[0].id).toBe('harbin');
   await addPointAtMapCenter(page, '测试补给站');
   await expect.poll(async () => (await readMap(request, map)).layers[0].points.length).toBe(5);
   await page.getByRole('button', { name: '删除 测试补给站', exact: true }).click();

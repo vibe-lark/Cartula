@@ -10,7 +10,7 @@ import TopBar from './TopBar.js';
 import PlanRail from './PlanRail.js';
 import LayerInfoDialog from './LayerInfoDialog.js';
 import { Modal } from './Modal.js';
-import InfoPanel, { type InfoItem } from './InfoPanel.js';
+import InfoPanel, { useInfoSeen, type InfoItem } from './InfoPanel.js';
 import AddPointPopover from './AddPointPopover.js';
 import SendPopover from './SendPopover.js';
 import Legend from './Legend.js';
@@ -22,6 +22,7 @@ import { routeGeometry } from './geo.js';
 import { activeMapIntents, priorityLabel } from './intents.js';
 import { ODBL_URL, OPEN_SOURCE_COMPONENTS, OSM_COPYRIGHT_URL, mentionsOsm, parseAttribution } from './credits.js';
 import { invertOperations } from './history.js';
+import { dailyLimitMinutes, layerIntentTexts } from './itinerary.js';
 import { agentNote } from '../handoff.js';
 import { randomId } from '../id.js';
 import type { PlanningPayload } from './CollaborationDialogs.js';
@@ -119,7 +120,18 @@ export default function MapWorkspace(props: MapWorkspaceProps) {
   const [relocating, setRelocating] = useState(false);
   const [focusAt, setFocusAt] = useState<Coord | null>(null);
   const [focusKey, setFocusKey] = useState(0);
-  const [newPoint, setNewPoint] = useState<{ layerId: string; at: Coord; after?: string; day?: number } | null>(null);
+  const [newPoint, setNewPoint] = useState<{ layerId: string; at: Coord; after?: string; day?: number; name?: string } | null>(null);
+  /**
+   * Adding stops one after another. 添加地点 used to end after a single map
+   * click, so laying out six stops for a day was six rounds of button → click
+   * → name. The chain keeps add mode on after each confirm — appending, or
+   * inserting after the stop just added — until Esc, 完成, or a cancelled form.
+   */
+  const [addChain, setAddChain] = useState<{ layerId: string; insert: boolean; added: number; last?: string } | null>(null);
+  /** The stop under the pointer on the map, for the open list to mark. */
+  const [hoveredPoint, setHoveredPoint] = useState<Selection | null>(null);
+  /** The stop a leg card's 查看详情 opened the list at. */
+  const [detailFocus, setDetailFocus] = useState<Selection | null>(null);
   const [dialog, setDialog] = useState<Dialog>(null);
   const [editLayer, setEditLayer] = useState<MapLayer | null>(null);
   const [changesOpen, setChangesOpen] = useState(false);
@@ -128,6 +140,7 @@ export default function MapWorkspace(props: MapWorkspaceProps) {
   const [rerouteHint, setRerouteHint] = useState<{ from: string; to: string } | null>(null);
   const [fitKey, setFitKey] = useState(0);
   const [fitLayerId, setFitLayerId] = useState<string | null>(null);
+  const [fitPointIds, setFitPointIds] = useState<string[] | null>(null);
   /**
    * The layer whose stop list is on the stage, when one is: put there by the
    * pointer resting on its dot in the rail, by a press on that dot, or by
@@ -226,8 +239,10 @@ export default function MapWorkspace(props: MapWorkspaceProps) {
   /**
    * Apply an edit locally at once, then save it.
    *
-   * Only for the position/day edits, where waiting a round trip per drag is the
-   * complaint. Everything else still goes through `edit`, because a local
+   * Only for the position/day edits — list reorders, marker drags and 移动 —
+   * where waiting a round trip per drag is the complaint: without it a dropped
+   * marker snapped back to where it was until the server answered, and a second
+   * drag in that window was refused. Everything else still goes through `edit`, because a local
    * preview only pays for itself where the same control is used repeatedly.
    *
    * The local copy is computed with `applyOperations` — the very function the
@@ -279,7 +294,7 @@ export default function MapWorkspace(props: MapWorkspaceProps) {
         // A `ConflictError` already refreshed the map before giving up, so the
         // rollback below lands on the server's own order; anything else only
         // knows to restore the order this edit started from.
-        setLocalError(e instanceof ConflictError ? `${message}（已恢复为服务器上的顺序）` : `${message}（已恢复改动前的顺序）`);
+        setLocalError(e instanceof ConflictError ? `${message}（已恢复为服务器上的版本）` : `${message}（已恢复到改动之前）`);
         // The stored snapshot was never touched, so dropping the local copy is
         // the rollback — for this edit and for everything queued behind it.
         setLocal(null);
@@ -310,7 +325,7 @@ export default function MapWorkspace(props: MapWorkspaceProps) {
     setRedoStack(stack => stack.slice(0, -1));
     setUndoStack(stack => [...stack, entry]);
   }
-  function fitTo(id: string | null) { setFitLayerId(id); setFitKey(n => n + 1); }
+  function fitTo(id: string | null, pointIds: string[] | null = null) { setFitLayerId(id); setFitPointIds(pointIds); setFitKey(n => n + 1); }
   function focusStop(layerId: string, pointId: string) {
     const point = snapshot.layers.find(layer => layer.id === layerId)?.points.find(item => item.id === pointId);
     if (!point) return;
@@ -337,9 +352,10 @@ export default function MapWorkspace(props: MapWorkspaceProps) {
    * where the ordinary 24px grace would take the list away on the very move
    * made to reach it; such a list waits until the pointer has been on it.
    */
-  function openDetail(layerId: string, sticky: boolean) {
+  function openDetail(layerId: string, sticky: boolean, focusPointId?: string) {
     clearTimeout(railTimer.current);
     clearTimeout(foldTimer.current);
+    setDetailFocus(focusPointId ? { layerId, pointId: focusPointId } : null);
     setShownId(layerId);
     setDetailSticky(sticky);
     setPanelGrabFocus(true);
@@ -351,6 +367,7 @@ export default function MapWorkspace(props: MapWorkspaceProps) {
     clearTimeout(foldTimer.current);
     if (!shownId || shownId === activeId) setDetailPinned(false);
     setShownId(null);
+    setDetailFocus(null);
     setHoveredLeg(null);
   }
   /**
@@ -363,7 +380,7 @@ export default function MapWorkspace(props: MapWorkspaceProps) {
     setRailHover(layerId);
     if (!layerId) return;
     clearTimeout(foldTimer.current);
-    const show = () => { setShownId(layerId); setDetailSticky(false); setPanelGrabFocus(false); };
+    const show = () => { setShownId(layerId); setDetailSticky(false); setPanelGrabFocus(false); setDetailFocus(null); };
     if (panelShown.current) show(); else railTimer.current = setTimeout(show, OPEN_MS);
   }
   /**
@@ -376,7 +393,7 @@ export default function MapWorkspace(props: MapWorkspaceProps) {
   function peekDetail(open: boolean) {
     clearTimeout(foldTimer.current);
     if (open) return;
-    foldTimer.current = setTimeout(() => { setShownId(null); setHoveredLeg(null); }, CLOSE_MS);
+    foldTimer.current = setTimeout(() => { setShownId(null); setDetailFocus(null); setHoveredLeg(null); }, CLOSE_MS);
   }
   /**
    * Make a plan the selected one, from a press on the map itself.
@@ -395,6 +412,7 @@ export default function MapWorkspace(props: MapWorkspaceProps) {
     setSelectedLeg(null);
     setNewPoint(null);
     setAdding(false);
+    setAddChain(null);
     setInsertAfter(undefined);
     setHoveredLeg(null);
     setPointEditing(false);
@@ -417,6 +435,7 @@ export default function MapWorkspace(props: MapWorkspaceProps) {
     setSelectedLeg(null);
     setNewPoint(null);
     setAdding(false);
+    setAddChain(null);
     setInsertAfter(undefined);
     setHoveredLeg(null);
     setPointEditing(false);
@@ -432,6 +451,7 @@ export default function MapWorkspace(props: MapWorkspaceProps) {
     setSelected(null);
     setNewPoint(null);
     setAdding(false);
+    setAddChain(null);
     setInsertAfter(undefined);
     setPointEditing(false);
   }
@@ -440,12 +460,15 @@ export default function MapWorkspace(props: MapWorkspaceProps) {
    * its day is inherited so the form never asks. Coordinates arrive from the
    * map click that follows.
    */
-  function startPoint(at?: Coord, after?: string) {
+  function startPoint(at?: Coord, after?: string, name?: string) {
     if (!active || !editable) return;
+    // A sibling undone or deleted from under an add chain: append instead of
+    // sending an insert the server would refuse.
+    if (after && !active.points.some(p => p.id === after)) after = undefined;
     const sibling = after ? active.points.find(p => p.id === after) : undefined;
     const maxDay = active.points.reduce((m, p) => Math.max(m, p.day ?? 0), 0);
     const day = sibling?.day ?? (after ? undefined : maxDay || undefined);
-    setNewPoint({ layerId: active.id, at: at ?? sibling?.at ?? active.points.at(-1)?.at ?? [116.397, 39.908], after, day });
+    setNewPoint({ layerId: active.id, at: at ?? sibling?.at ?? active.points.at(-1)?.at ?? [116.397, 39.908], after, day, name });
     setSelected(null); setSelectedLeg(null); setAdding(false); setInsertAfter(undefined); setHoverAt(null);
   }
   /**
@@ -454,11 +477,12 @@ export default function MapWorkspace(props: MapWorkspaceProps) {
    * one, and the point has to land in the layer whose list it was — so that
    * layer is selected first, the same way a press on its dot would.
    */
-  function beginAdd(after?: string, layerId: string | null = activeId) {
+  function beginAdd(after?: string, layerId: string | null = activeId, chain = true) {
     if (!editable) return;
     if (layerId && layerId !== activeId) switchPlan(layerId);
     setInsertAfter(after);
     setAdding(true);
+    setAddChain(chain && layerId ? { layerId, insert: Boolean(after), added: 0 } : null);
     setSelected(null); setSelectedLeg(null); setNewPoint(null); setHoverAt(null);
   }
   async function addPoint(input: { name: string; note: string }) {
@@ -471,8 +495,29 @@ export default function MapWorkspace(props: MapWorkspaceProps) {
     };
     if (await edit([{ op: 'insert', layerId: newPoint.layerId, point: { ...point, id }, ...(newPoint.after ? { after: newPoint.after } : {}) }])) {
       setNewPoint(null);
+      // The new stop's card comes up either way, so it can be checked or taken
+      // back at once.
       setSelected({ layerId: newPoint.layerId, pointId: id });
+      if (addChain?.layerId === newPoint.layerId) {
+        // And the map is straight back to picking the next spot. An insertion
+        // chain follows the stop just added, so a run of clicks lays stops down
+        // in order.
+        setInsertAfter(addChain.insert ? id : undefined);
+        setAddChain({ ...addChain, added: addChain.added + 1, last: input.name });
+        setAdding(true);
+      }
     }
+  }
+  // A dialog is a different task: whatever add mode was running ends there.
+  useEffect(() => { if (dialog) { setAdding(false); setAddChain(null); setInsertAfter(undefined); } }, [dialog]);
+  /** Leave add mode, chain and all: Esc, 完成, or a cancelled form. */
+  function endAdd() {
+    setAdding(false);
+    setAddChain(null);
+    setInsertAfter(undefined);
+    setNewPoint(null);
+    setHoverAt(null);
+    setRelocating(false);
   }
   /**
    * Move a stop within its layer, and — when it was dropped into a different
@@ -487,8 +532,8 @@ export default function MapWorkspace(props: MapWorkspaceProps) {
    * together they are still atomic — `applyOperations` validates and applies the
    * whole batch or none of it — so the user sees one undoable step either way.
    *
-   * `toDay === undefined` means the drop stayed inside its own group (or came
-   * from the arrow buttons), so only the position moves.
+   * `toDay === undefined` means the drop stayed inside its own group (or an
+   * arrow moved it within its day), so only the position moves.
    */
   function reorder(layerId: string, pointId: string, toIndex: number, toDay?: number | null) {
     const layer = snapshot.layers.find(item => item.id === layerId);
@@ -531,12 +576,23 @@ export default function MapWorkspace(props: MapWorkspaceProps) {
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'z') {
+      const key = e.key.toLowerCase();
+      // Ctrl+Z / ⌘Z undoes; Ctrl+Shift+Z, ⌘⇧Z and Ctrl+Y (the one the redo
+      // button's tooltip names, and the Windows habit) redo. A text field keeps
+      // the keystroke for its own typing: undoing a typo in a note must not
+      // revert — and save — the last edit to the map instead.
+      const undoKey = (e.metaKey || e.ctrlKey) && key === 'z';
+      const redoKey = e.ctrlKey && !e.metaKey && !e.shiftKey && key === 'y';
+      if (undoKey || redoKey) {
+        const target = e.target as HTMLElement | null;
+        if (target?.closest?.('input, textarea, select, [contenteditable=""], [contenteditable="true"]')) return;
+        if (!editable) return;
         e.preventDefault();
-        if (e.shiftKey) void redo(); else void undo();
+        if (redoKey || e.shiftKey) void redo(); else void undo();
         return;
       }
       if (e.key !== 'Escape' || e.isComposing || e.keyCode === 229 || dialog) return;
+      if (adding || relocating || addChain) { endAdd(); return; }
       if (selected || newPoint || selectedLeg) { setSelected(null); setNewPoint(null); setSelectedLeg(null); setPointEditing(false); return; }
       if (sendOpen) { setSendOpen(false); return; }
       if (infoOpen) { setInfoOpen(false); return; }
@@ -545,7 +601,7 @@ export default function MapWorkspace(props: MapWorkspaceProps) {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [dialog, selected, newPoint, selectedLeg, sendOpen, infoOpen, shownId, detailPinned, activeId, undoStack, redoStack]);
+  }, [dialog, selected, newPoint, selectedLeg, sendOpen, infoOpen, shownId, detailPinned, activeId, undoStack, redoStack, editable, adding, relocating, addChain]);
 
   const routeLayers = snapshot.layers.filter(l => l.kind === 'route');
   /** The same rule the canvas draws by: several routes shown, one of them selected. */
@@ -589,15 +645,18 @@ export default function MapWorkspace(props: MapWorkspaceProps) {
       const text = agentNote(event);
       if (text) items.push({ id: `agent-${event.version}`, kind: 'agent', title: `v${event.version}`, text });
     }
-    if (shownSuggestion) items.push({ id: 'suggestion', kind: 'suggestion', title: '建议', text: shownSuggestion.text, onDismiss: () => setDismissedSuggestion(shownSuggestion) });
+    // Ids name the content, not the slot: a second suggestion or another
+    // rerouted leg is a new item to the unread badge, not the one already seen.
+    if (shownSuggestion) items.push({ id: `suggestion-${shownSuggestion.text}`, kind: 'suggestion', title: '建议', text: shownSuggestion.text, onDismiss: () => setDismissedSuggestion(shownSuggestion) });
     if (rerouteHint) items.push({
-      id: 'reroute', kind: 'reroute', title: '路线重算',
+      id: `reroute-${rerouteHint.from}-${rerouteHint.to}`, kind: 'reroute', title: '路线重算',
       text: `已按你的意图去掉「${rerouteHint.from} → ${rerouteHint.to}」的原路车程，这段改为直线估算。交给 Agent 后会按避免意图重算道路。`,
       actionLabel: '交给 Agent 重算',
       onAction: () => { setRerouteHint(null); setSendOpen(true); },
     });
     return items;
   }, [snapshot, mapIntents, shownSuggestion, rerouteHint]);
+  const infoSeen = useInfoSeen(snapshot.id, infoItems, infoOpen);
   // Language only does something with a styled basemap; the SVG fallback and
   // offline mode have no labels to localize.
   const basemapAvailable = connection !== 'offline' && typeof window !== 'undefined' && Boolean((window as unknown as { __CARTULA_CONFIG__?: { styleUrl?: string } }).__CARTULA_CONFIG__?.styleUrl);
@@ -629,11 +688,11 @@ export default function MapWorkspace(props: MapWorkspaceProps) {
       onSettings={() => setDialog('settings')}/>
     <div className="workspace-body">
       <main className="map-stage">
-        <MapCanvas layers={visibleLayers} activeLayerId={activeId} selected={selected} adding={adding} relocating={relocating} editable={editable && !busy} offline={connection === 'offline'} fitLayerId={fitLayerId} fitKey={fitKey} legMode={legMode} colorMode={colorMode} hoveredLeg={hoveredLeg} selectedLeg={selectedLeg} insertFrom={insertAfter && active ? active.points.find(pt => pt.id === insertAfter)?.at ?? null : null} insertTo={insertAfter && active ? active.points[active.points.findIndex(pt => pt.id === insertAfter) + 1]?.at ?? null : null} hoverAt={hoverAt} focusAt={focusAt} focusKey={focusKey} mapStyle={preferences.style} mapLanguage={preferences.language} onHoverAt={setHoverAt} onSelect={select} onSelectLeg={selectLeg} onActivateLayer={switchPlan} onAttribution={setAttribution} onMove={(layerId, pointId, at) => { void edit([{ op: 'update', layerId, pointId, patch: { at } }]); }} onAdd={at => {
-          if (relocating && selected) { void edit([{ op: 'update', layerId: selected.layerId, pointId: selected.pointId, patch: { at } }]); setRelocating(false); setHoverAt(null); return; }
-          startPoint(at, insertAfter);
+        <MapCanvas layers={visibleLayers} activeLayerId={activeId} selected={selected} adding={adding} relocating={relocating} editable={editable && !listBusy} offline={connection === 'offline'} fitLayerId={fitLayerId} fitPointIds={fitPointIds} fitKey={fitKey} legMode={legMode} colorMode={colorMode} hoveredLeg={hoveredLeg} selectedLeg={selectedLeg} insertFrom={insertAfter && active ? active.points.find(pt => pt.id === insertAfter)?.at ?? null : null} insertTo={insertAfter && active ? active.points[active.points.findIndex(pt => pt.id === insertAfter) + 1]?.at ?? null : null} hoverAt={hoverAt} focusAt={focusAt} focusKey={focusKey} mapStyle={preferences.style} mapLanguage={preferences.language} onHoverAt={setHoverAt} onSelect={select} onSelectLeg={selectLeg} onActivateLayer={switchPlan} onAttribution={setAttribution} onMove={(layerId, pointId, at) => { editOptimistic([{ op: 'update', layerId, pointId, patch: { at } }]); }} onAdd={(at, name) => {
+          if (relocating && selected) { editOptimistic([{ op: 'update', layerId: selected.layerId, pointId: selected.pointId, patch: { at } }]); setRelocating(false); setHoverAt(null); return; }
+          startPoint(at, insertAfter, name);
           setAdding(false); setHoverAt(null);
-        }}/>
+        }} onHoverPoint={setHoveredPoint}/>
         <PlanRail layers={snapshot.layers} visible={l => visibility[l.id] ?? l.visible} activeId={activeId} shownId={panelLayer?.id ?? null}
           editable={editable} busy={busy}
           onOpen={activate} onHover={hoverRail}
@@ -643,6 +702,7 @@ export default function MapWorkspace(props: MapWorkspaceProps) {
             that belongs to the layer it was opened for. */}
         {panelLayer && <LayerPanel key={panelLayer.id} layer={panelLayer} ordinal={snapshot.layers.indexOf(panelLayer) + 1}
           selectedPointId={selected?.layerId === panelLayer.id ? selected.pointId : null}
+          linkedPointId={hoveredPoint?.layerId === panelLayer.id ? hoveredPoint.pointId : detailFocus?.layerId === panelLayer.id ? detailFocus.pointId : null}
           editable={editable} busy={listBusy} visible={visibility[panelLayer.id] ?? panelLayer.visible}
           grabFocus={panelGrabFocus} deliberate={panelGrabFocus} colorMode={colorMode}
           pinned={detailPinned && panelLayer.id === activeId} held={railHover !== null} sticky={detailSticky}
@@ -660,23 +720,39 @@ export default function MapWorkspace(props: MapWorkspaceProps) {
           onToggleVisible={() => setVisibility(v => ({ ...v, [panelLayer.id]: !(v[panelLayer.id] ?? panelLayer.visible) }))}
           onSolo={() => solo(panelLayer.id)}
           onFit={() => fitTo(panelLayer.id)}
+          onFitDay={pointIds => { setVisibility(v => ({ ...v, [panelLayer.id]: true })); fitTo(panelLayer.id, pointIds); }}
+          dailyLimit={dailyLimitMinutes(layerIntentTexts(panelLayer, snapshot.intents))}
           onClose={closeDetail}
           onHoverLeg={setHoveredLeg}/>}
-        {infoOpen && <InfoPanel items={infoItems} pinned={infoPinned} onPin={setInfoPinned} onClose={() => setInfoOpen(false)}/>}
+        {infoOpen && <InfoPanel items={infoItems} fresh={infoSeen.fresh} pinned={infoPinned} onPin={setInfoPinned} onClose={() => setInfoOpen(false)}/>}
         <div className="map-top-tools"><div className="map-tools">
           <button type="button" className={`icon-button floating map-info-button ${infoOpen ? 'active' : ''}`} aria-label="信息" aria-expanded={infoOpen} title="规划意图、Agent 调整说明与建议" onClick={() => { setInfoOpen(v => !v); setShownId(null); }}>
             <Info size={17}/>
-            {infoItems.length > 0 && <span className="info-badge map-info-badge">{infoItems.length > 99 ? '99+' : infoItems.length}</span>}
+            {infoSeen.unread > 0 && <span className="info-badge map-info-badge" aria-label={`${infoSeen.unread} 条新信息`}>{infoSeen.unread > 99 ? '99+' : infoSeen.unread}</span>}
           </button>
           <button type="button" className="icon-button floating" aria-label="适应全部图层" onClick={() => fitTo(null)}><LocateFixed size={17}/></button>
         </div></div>
         {(error || localError) && <div className="notice error" role="alert"><AlertTriangle size={17}/><span>{error || localError}</span><button className="icon-button" aria-label="关闭错误" onClick={() => { setLocalError(''); props.onClearError(); }}><X size={15}/></button></div>}
         {props.notice && !error && !localError && <div className="notice info" role="status"><Info size={17}/><span>{props.notice.text}</span>{props.notice.href && <a className="button compact" href={props.notice.href} target="_blank" rel="noreferrer noopener">{props.notice.label ?? '打开独立页面'}</a>}<button className="icon-button" aria-label="关闭提示" onClick={() => props.onClearNotice?.()}><X size={15}/></button></div>}
-        {(adding || relocating) && <div className="adding-hint"><MapPin size={17}/>{relocating ? '点击地图，移动该地点' : `点击地图，为「${active?.name}」${insertAfter ? '插入中途地点' : '添加一个地点'}`}</div>}
+        {(adding || relocating) && <div className="adding-hint" role="status"><MapPin size={17}/>
+          <span>{relocating ? '点击地图，移动该地点'
+            : addChain?.added ? `已添加「${addChain.last}」· 继续点击地图${insertAfter ? '插入下一个' : '添加下一个'}`
+            : `点击地图，为「${active?.name}」${insertAfter ? '插入中途地点' : '添加一个地点'}`}</span>
+          <button type="button" className="adding-hint-done" onClick={endAdd}>{addChain?.added ? '完成' : '取消'}<kbd>Esc</kbd></button>
+        </div>}
         {!snapshot.layers.length && <div className="empty-map"><div className="empty-map-icon"><Route size={34}/></div><span className="eyebrow">CARTULA</span><h2>新建地图</h2><p>先加一个图层，再把地点放到地图上。</p>{editable && <button className="button primary" onClick={() => { setEditLayer(null); setDialog('layer'); }}><MapPin size={16}/>创建第一个图层</button>}</div>}
-        {inspectedLayer && inspectedPoint && !newPoint && !pointEditing && !relocating && <PointPopover layer={inspectedLayer} point={inspectedPoint} editable={editable} busy={busy} offline={connection === 'offline'} colorMode={colorMode} pinned={cardPinned} onPin={setCardPinned} onClose={() => { setSelected(null); setPointEditing(false); setRelocating(false); }} onEdit={() => setPointEditing(true)} onMove={() => { setRelocating(true); setAdding(false); setSelectedLeg(null); }} onDelete={async () => { if (await edit([{ op: 'delete', layerId: inspectedLayer.id, pointId: inspectedPoint.id }])) setSelected(null); }}/>}
+        {inspectedLayer && inspectedPoint && !newPoint && !pointEditing && !relocating && <PointPopover layer={inspectedLayer} point={inspectedPoint} editable={editable} busy={busy} offline={connection === 'offline'} colorMode={colorMode} pinned={cardPinned} onPin={setCardPinned} onClose={() => { setSelected(null); setPointEditing(false); setRelocating(false); }} onEdit={() => setPointEditing(true)} onMove={() => { setRelocating(true); setAdding(false); setSelectedLeg(null); }} onDelete={async () => {
+          // Taking back the stop an insertion chain was following: the chain
+          // carries on from the one before it.
+          const before = inspectedLayer.points[inspectedLayer.points.indexOf(inspectedPoint) - 1]?.id;
+          if (await edit([{ op: 'delete', layerId: inspectedLayer.id, pointId: inspectedPoint.id }])) {
+            setSelected(null);
+            if (insertAfter === inspectedPoint.id) setInsertAfter(before);
+          }
+        }}/>}
         {newPoint && inspectedLayer && <AddPointPopover key={`${newPoint.layerId}-${newPoint.at.join(',')}`} layer={inspectedLayer} at={newPoint.at} day={newPoint.day} busy={busy}
-          onClose={() => setNewPoint(null)}
+          suggestedName={newPoint.name}
+          onClose={endAdd}
           onSubmit={input => void addPoint(input)}/>}
         {inspectedLayer && inspectedPoint && pointEditing && !newPoint && <PointInspector key={`${inspectedLayer.id}-${inspectedPoint.id}-${snapshot.version}`} layer={inspectedLayer} point={inspectedPoint} editable={editable} busy={busy} offline={connection === 'offline'} onClose={() => { setSelected(null); setPointEditing(false); }} onSave={async point => {
           if (inspectedPoint && await edit([{ op: 'update', layerId: inspectedLayer.id, pointId: inspectedPoint.id, patch: { ...point, day: point.day ?? null, flexibility: point.flexibility ?? null, icon: point.icon ?? null } }])) setPointEditing(false);
@@ -703,7 +779,7 @@ export default function MapWorkspace(props: MapWorkspaceProps) {
             }
           }}
           /** The original two-step route, for picking a spot off the line. */
-          onPickOnMap={() => { setLegAt(null); beginAdd(selectedLegFrom.id); }}
+          onPickOnMap={() => { setLegAt(null); beginAdd(selectedLegFrom.id, selectedLegLayer.id, false); }}
           onAvoid={async () => {
             const from = selectedLegFrom.name, to = selectedLegTo.name;
             const routing = selectedLegLayer.routing ? { ...selectedLegLayer.routing } : { source: '未注明来源' };
@@ -714,7 +790,7 @@ export default function MapWorkspace(props: MapWorkspaceProps) {
               { op: 'route.leg.update', layerId: selectedLegLayer.id, fromPointId: selectedLegFrom.id, toPointId: selectedLegTo.id, patch: { note: `用户要求避免 ${from} 至 ${to}`, path: null, distanceKm: null, durationMinutes: null, delayMinutes: null } },
             ])) { setSelectedLeg(null); setRerouteHint({ from, to }); }
           }}
-          onDetail={() => openDetail(selectedLegLayer.id, true)}/>}
+          onDetail={() => openDetail(selectedLegLayer.id, true, selectedLegFrom.id)}/>}
         <div className="map-bottom">
           <button
             type="button"

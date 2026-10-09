@@ -8,6 +8,11 @@ export interface AddPointPopoverProps {
   at: Coord;
   /** Inherited from the point this one is inserted after, when known. */
   day?: number;
+  /**
+   * The basemap label under the click, when there was one. It fills the name
+   * field already selected, so Enter accepts it and typing replaces it.
+   */
+  suggestedName?: string;
   busy: boolean;
   onClose: () => void;
   onSubmit: (input: { name: string; note: string }) => Promise<void> | void;
@@ -19,8 +24,8 @@ export interface AddPointPopoverProps {
  * day, the position after a sibling) or edited later from the point's own
  * inspector.
  */
-export default function AddPointPopover({ layer, at, day, busy, onClose, onSubmit }: AddPointPopoverProps) {
-  const [name, setName] = useState('');
+export default function AddPointPopover({ layer, at, day, suggestedName, busy, onClose, onSubmit }: AddPointPopoverProps) {
+  const [name, setName] = useState(suggestedName ?? '');
   const [note, setNote] = useState('');
   const [saving, setSaving] = useState(false);
   const coordText = `${at[1].toFixed(5)}°, ${at[0].toFixed(5)}°`;
@@ -30,7 +35,7 @@ export default function AddPointPopover({ layer, at, day, busy, onClose, onSubmi
     <p className="inspector-layer"><i style={{ background: layer.color }}/>{layer.name}{day ? ` · 第 ${day} 天` : ''}</p>
     <form onSubmit={e => { e.preventDefault(); setSaving(true); void Promise.resolve(onSubmit({ name: name.trim(), note: note.trim() })).catch(() => setSaving(false)); }}>
       <fieldset disabled={busy || saving}>
-        <label>地点名称<input name="name" value={name} onChange={e => setName(e.target.value)} placeholder="例如：五大连池" required maxLength={80} autoFocus/></label>
+        <label>地点名称<input name="name" value={name} onChange={e => setName(e.target.value)} placeholder="例如：五大连池" required maxLength={80} autoFocus onFocus={e => e.currentTarget.select()}/></label>
         <label>简单描述<textarea aria-label="简单描述" name="note" rows={3} value={note} onChange={e => setNote(e.target.value)} maxLength={1000} placeholder="停留安排、灵感或提醒（可选）"/></label>
         <p className="field-hint"><MapPin size={12}/> 坐标 {coordText}（点击地图自动获得）</p>
       </fieldset>

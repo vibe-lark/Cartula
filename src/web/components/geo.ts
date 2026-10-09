@@ -168,11 +168,20 @@ export function layersBounds(layers: MapLayer[]): Bounds | null {
 
 /**
  * What the camera should frame: the focused layer alone when one is focused
- * (and it has geometry), otherwise everything.
+ * (and it has geometry), otherwise everything. `pointIds` narrows the focused
+ * layer further to some of its stops and the roads out of them — one day of
+ * an itinerary, as a day group's 缩放至这一天 asks for.
  */
-export function focusBounds(layers: MapLayer[], focusLayerId: string | null): Bounds | null {
+export function focusBounds(layers: MapLayer[], focusLayerId: string | null, pointIds?: readonly string[] | null): Bounds | null {
   if (focusLayerId) {
     const focused = layers.find((l) => l.id === focusLayerId);
+    if (focused && pointIds?.length) {
+      const ids = new Set(pointIds);
+      const coords = focused.points.filter(p => ids.has(p.id)).map(p => p.at);
+      for (const leg of focused.routing?.legs ?? []) if (ids.has(leg.fromPointId)) coords.push(...(leg.path ?? []));
+      const subset = boundsOf(coords);
+      if (subset) return subset;
+    }
     if (focused) {
       const only = boundsOf(layerCoords(focused));
       if (only) return only;

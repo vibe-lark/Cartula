@@ -65,6 +65,40 @@ export function usePinnedPanel(key: 'detail' | 'card' | 'info') {
   return [pinned, setPinned] as const;
 }
 
+/** The property keys `languageExpression` reads, in the same order, for JS-side lookups. */
+const NAME_KEYS: Record<MapLanguage, string[]> = {
+  zh: ['name:zh-Hans', 'name:zh', 'name', 'name:latin', 'name:en'],
+  'zh-Hant': ['name:zh-Hant', 'name:zh', 'name', 'name:latin', 'name:en'],
+  en: ['name:en', 'name_en', 'name:latin', 'name'],
+  local: ['name', 'name:latin', 'name:en'],
+};
+
+/**
+ * Basemap label layers worth naming a new stop after, best first. Street
+ * names and house numbers are left out: a click beside a road is a click on
+ * a place, not on the road's label.
+ */
+const PLACE_SOURCES = ['poi', 'aerodrome_label', 'mountain_peak', 'place', 'water_name', 'park'];
+
+/**
+ * The name of the place under a click on the basemap, in the label language
+ * the map is showing, so adding a stop on a labelled place does not mean
+ * typing its name again. Features arrive nearest-first from the caller.
+ */
+export function basemapPlaceName(features: { sourceLayer?: string; properties?: Record<string, unknown> | null }[], language: MapLanguage = 'zh'): string | undefined {
+  const ranked = features
+    .map((feature, order) => ({ feature, order, rank: PLACE_SOURCES.indexOf(feature.sourceLayer ?? '') }))
+    .filter(item => item.rank >= 0)
+    .sort((a, b) => a.rank - b.rank || a.order - b.order);
+  for (const { feature } of ranked) {
+    for (const key of NAME_KEYS[language]) {
+      const value = feature.properties?.[key];
+      if (typeof value === 'string' && value.trim()) return value.trim().slice(0, 80);
+    }
+  }
+  return undefined;
+}
+
 export function languageExpression(language: MapLanguage): ExpressionSpecification {
   if (language === 'zh') {
     // 优先读取规范的简体中文 name:zh-Hans，避免命中包含 "韩国 / 南韓" 的原始 name:zh 简繁双并列脏数据

@@ -9,6 +9,7 @@ import { TRAVEL_TIME_NOTE, compactDuration, formatDistance, layerDays, layerTrav
 import { luminance } from './dayColors.js';
 import PinButton from './PinButton.js';
 import { usePeek } from './peek.js';
+import { dayTravel, groupEndTarget, stepMove, type DayGroupRef } from './itinerary.js';
 
 export const layerKind = (layer: MapLayer) =>
   layer.kind === 'route' ? '路线' : layer.kind === 'spots' ? '地点集' : '地理数据';
@@ -65,6 +66,12 @@ export interface LayerPanelProps {
   ordinal: number;
   /** Selection within this layer only; null when another layer owns it. */
   selectedPointId: string | null;
+  /**
+   * The stop being pointed at elsewhere — a marker under the pointer on the
+   * map, or the start of the leg whose card opened this list. Its row is
+   * marked and scrolled into view, without selecting it.
+   */
+  linkedPointId?: string | null;
   editable: boolean;
   busy: boolean;
   /** Whether the map is drawing this layer. */
@@ -104,7 +111,7 @@ export interface LayerPanelProps {
   /**
    * Move a stop. `toDay` is the day group it was dropped into — a number, or
    * null for 未排期 — and is undefined when the position changed but the group
-   * did not (the arrow buttons, or a drop inside the same group).
+   * did not (an arrow inside a day, or a drop inside the same group).
    */
   onReorder: (pointId: string, toIndex: number, toDay?: number | null) => void;
   /** Append a point at the end of the layer. */
@@ -118,21 +125,31 @@ export interface LayerPanelProps {
   /** Show only this layer on the map. */
   onSolo: () => void;
   onFit: () => void;
+  /** Frame some of this layer's stops — one day group — on the map. */
+  onFitDay: (pointIds: string[]) => void;
+  /** Per-day travel cap the plan's intents state, in minutes, if they state one. */
+  dailyLimit?: number;
   onClose: () => void;
   /** Hover/focus on a row previews its outgoing leg's annotation on the map. */
   onHoverLeg: (leg: LegRef | null) => void;
 }
 
 /** One collapsible day group: a parent row and the stops made on that day. */
-function DayGroup({ label, day, points, layer, dayColor, selectedPointId, editable, busy, colorMode, defaultOpen, dragged, onDragStart, onDrop, onDragEnd, onSelect, onReorder, onInsertAfter, onHoverLeg, registerRow }: {
+function DayGroup({ label, day, points, groups, layer, dayColor, selectedPointId, linkedPointId, editable, busy, colorMode, defaultOpen, dailyLimit, dragged, onDragStart, onDrop, onDragEnd, onSelect, onReorder, onInsertAfter, onHoverLeg, onFitDay, registerRow }: {
   label: string;
+  /** Per-day travel cap from the plan's intents, in minutes; a day over it is flagged. */
+  dailyLimit?: number;
+  onFitDay: (pointIds: string[]) => void;
   /** This group's itinerary day; null for 未排期. Dropping here sets it. */
   day: number | null;
   points: MapPoint[];
   layer: MapLayer;
   /** This day's colour on the map, or null for the unscheduled group. */
   dayColor: string | null;
+  /** Every group in screen order, so the arrows can cross into the next day. */
+  groups: DayGroupRef[];
   selectedPointId: string | null;
+  linkedPointId: string | null;
   editable: boolean;
   busy: boolean;
   colorMode: RouteColorMode;
@@ -161,12 +178,11 @@ function DayGroup({ label, day, points, layer, dayColor, selectedPointId, editab
     if (!dragged) return;
     event.preventDefault();
     setOver(false);
-    // The index of the last stop in this group, so the dragged stop joins the
-    // end of the day rather than displacing its first stop. An empty group has
-    // no anchor of its own: the layer order is left alone and only `day` moves.
-    const last = points.at(-1);
-    const anchor = last ? layer.points.findIndex(item => item.id === last.id) : -1;
-    onDrop(anchor, day);
+    // After the last stop in this group, from above or below, so the dragged
+    // stop joins the end of the day rather than displacing a stop already in
+    // it. An empty group has no anchor of its own: the layer order is left
+    // alone and only `day` moves.
+    onDrop(groupEndTarget(layer, points, dragged), day);
   };
   // One custom property feeds both the wash and the left edge in styles.css, so
   // the two can never drift apart. An undated group passes none and inherits
@@ -174,15 +190,34 @@ function DayGroup({ label, day, points, layer, dayColor, selectedPointId, editab
   // claim a place on the map that it does not have. The drop highlight is
   // `.day-group.drop-target` in the same file.
   const style = dayColor ? { '--day-color': dayColor } as CSSProperties : undefined;
+  // The day's own totals beside its name, so a cap like 每天开车不超过三小时 can
+  // be checked at a glance instead of by adding up leg lines row by row. The
+  // legs counted are the ones out of this day's stops — the lines the rows
+  // show and the map draws in this day's colour. 未排期 is not a day.
+  const travel = day !== null ? dayTravel(layer, points) : null;
+  const overLimit = dailyLimit !== undefined && travel?.minutes !== undefined && travel.minutes > dailyLimit;
+  const travelTitle = travel ? [
+    `${label}：从这天各站出发的 ${travel.legs} 段路程合计`,
+    travel.straight ? '部分路段没有路由里程，按直线估算' : '',
+    travel.partialTime ? '部分路段没有时间，合计时间只是下限' : '',
+    overLimit ? `超过规划意图里的每天 ${compactDuration(dailyLimit!)}` : '',
+  ].filter(Boolean).join('；') : undefined;
   return <div className={`day-group ${open ? 'open' : ''} ${over ? 'drop-target' : ''}`} style={style}
     onDragOver={acceptDrop} onDragEnter={acceptDrop}
     onDragLeave={event => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setOver(false); }}
     onDrop={groupDrop}>
-    <button type="button" className="day-group-head" aria-expanded={open} onClick={() => setOpen(v => !v)}>
-      <ChevronDown size={13} className="day-group-chevron" aria-hidden="true"/>
-      <span>{label}</span>
-      <span className="day-group-count">{points.length} 点</span>
-    </button>
+    <div className="day-group-bar">
+      <button type="button" className="day-group-head" aria-expanded={open} onClick={() => setOpen(v => !v)} title={travelTitle}>
+        <ChevronDown size={13} className="day-group-chevron" aria-hidden="true"/>
+        <span className="day-group-label">{label}</span>
+        <span className="day-group-count">
+          {points.length} 点
+          {travel && <> · {travel.straight ? '≈' : ''}{formatDistance(travel.distanceKm)}</>}
+          {travel?.minutes !== undefined && <> · <span className={overLimit ? 'day-group-over' : undefined}>{overLimit && <AlertTriangle size={11} aria-hidden="true"/>}{travel.partialTime ? '≥' : ''}{compactDuration(travel.minutes)}</span></>}
+        </span>
+      </button>
+      {points.length > 0 && day !== null && <button type="button" className="icon-button day-group-fit" aria-label={`缩放至${label}`} title={`在地图上只框${label}`} onClick={() => onFitDay(points.map(point => point.id))}><LocateFixed size={12}/></button>}
+    </div>
     {open && <div className="day-group-body">
       {points.map(point => {
         const index = layer.points.findIndex(item => item.id === point.id);
@@ -190,8 +225,10 @@ function DayGroup({ label, day, points, layer, dayColor, selectedPointId, editab
           ? { layerId: layer.id, fromPointId: point.id, toPointId: layer.points[index + 1].id }
           : null;
         const rowColor = pointColor(point, layer, colorMode);
+        const up = stepMove(layer, groups, point.id, -1);
+        const down = stepMove(layer, groups, point.id, 1);
         return <div key={point.id} ref={el => registerRow(point.id, el)}
-          className={`point-row ${selectedPointId === point.id ? 'selected' : ''} ${dragged === point.id ? 'dragging' : ''}`}
+          className={`point-row ${selectedPointId === point.id ? 'selected' : ''} ${linkedPointId === point.id ? 'linked' : ''} ${dragged === point.id ? 'dragging' : ''}`}
           draggable={editable && !busy}
           onDragStart={e => { onDragStart(point.id); e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', point.id); }}
           onDragOver={e => { if (dragged) e.preventDefault(); }}
@@ -209,8 +246,12 @@ function DayGroup({ label, day, points, layer, dayColor, selectedPointId, editab
           <button className="point-select" onClick={() => onSelect(point.id)}>{layer.kind === 'spots' ? <SpotMark icon={markerIcon('spots', point.icon)!} warn={point.warn}/> : <span className="point-number" style={{ borderColor: rowColor, color: rowColor }}>{String(index + 1).padStart(2, '0')}</span>}<span className="point-text"><strong>{point.name}{point.warn && <AlertTriangle size={12} aria-label="提醒"/>}</strong>{!point.day && <small>{`${point.at[0].toFixed(3)}°, ${point.at[1].toFixed(3)}°`}</small>}{point.flexibility && <small className="point-intent">{point.flexibility === 'fixed' ? '必须保留' : '允许调整'}</small>}{segmentInfo(layer, index) && <small className="segment-stat" title="至下一站">{segmentInfo(layer, index)}</small>}</span></button>
           {editable && <div className="point-actions">
             <button className="icon-button" aria-label={`在 ${point.name} 后添加`} title="在地图上点选新地点的位置" disabled={busy} onClick={() => onInsertAfter(point.id)}><Plus size={14}/></button>
-            <button className="icon-button" aria-label={`上移 ${point.name}`} disabled={busy || index === 0} onClick={() => onReorder(point.id, index - 1)}><ArrowUp size={13}/></button>
-            <button className="icon-button" aria-label={`下移 ${point.name}`} disabled={busy || index === layer.points.length - 1} onClick={() => onReorder(point.id, index + 1)}><ArrowDown size={13}/></button>
+            {/* By the list as drawn: the neighbour a stop swaps with is the row
+                above or below it on screen, not whatever stop of another day
+                sits next to it in the layer order; off the end of a day it
+                joins the adjacent day. See `stepMove`. */}
+            <button className="icon-button" aria-label={`上移 ${point.name}`} title={up?.toDay !== undefined ? '移到上一天的末尾' : undefined} disabled={busy || !up} onClick={() => up && onReorder(point.id, up.toIndex, up.toDay)}><ArrowUp size={13}/></button>
+            <button className="icon-button" aria-label={`下移 ${point.name}`} title={down?.toDay !== undefined ? '移到下一天的开头' : undefined} disabled={busy || !down} onClick={() => down && onReorder(point.id, down.toIndex, down.toDay)}><ArrowDown size={13}/></button>
             <GripVertical size={13} className="drag-handle"/>
           </div>}
         </div>;
@@ -247,6 +288,9 @@ export default function LayerPanel(props: LayerPanelProps) {
   useEffect(() => {
     if (selectedPointId) rowRefs.current.get(selectedPointId)?.scrollIntoView({ block: 'nearest' });
   }, [selectedPointId]);
+  useEffect(() => {
+    if (props.linkedPointId) rowRefs.current.get(props.linkedPointId)?.scrollIntoView({ block: 'nearest' });
+  }, [props.linkedPointId]);
   useEffect(() => { onPeek(peek.open); }, [peek.open]);
 
   const days = layerDays(layer);
@@ -292,8 +336,9 @@ export default function LayerPanel(props: LayerPanelProps) {
       <div className="panel-body">
         {layer.points.length > 0 ? (
           <div className="itinerary" aria-label={`${layer.name}地点列表`}>
-            {groups.map(group => <DayGroup key={group.key} label={group.label} day={group.day} points={group.points} layer={layer} dayColor={group.color}
-              selectedPointId={selectedPointId} editable={editable} busy={busy} colorMode={colorMode} defaultOpen
+            {groups.map(group => <DayGroup key={group.key} label={group.label} day={group.day} points={group.points} groups={groups} layer={layer} dayColor={group.color}
+              selectedPointId={selectedPointId} linkedPointId={props.linkedPointId ?? null} editable={editable} busy={busy} colorMode={colorMode} defaultOpen
+              dailyLimit={props.dailyLimit} onFitDay={props.onFitDay}
               dragged={dragged} onDragStart={setDragged} onDragEnd={() => setDragged(null)}
               onDrop={(toIndex, toDay) => { if (dragged) props.onReorder(dragged, toIndex, toDay); setDragged(null); }}
               onSelect={props.onSelect} onReorder={props.onReorder} onInsertAfter={props.onInsertAfter}

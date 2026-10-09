@@ -172,7 +172,7 @@ export default function SvgMapCanvas(props: MapCanvasProps & { fallbackReason?: 
 
   /* -------------------------------------------------------------- framing */
 
-  const bounds = useMemo(() => focusBounds(layers, fitLayerId), [layers, fitLayerId]);
+  const bounds = useMemo(() => focusBounds(layers, fitLayerId, props.fitPointIds), [layers, fitLayerId, props.fitPointIds]);
   const aspect = size.w / Math.max(1, size.h);
   const hasFitted = useRef(false);
   const lastFitKey = useRef(fitKey);
@@ -492,6 +492,12 @@ export default function SvgMapCanvas(props: MapCanvasProps & { fallbackReason?: 
     }
     return out;
   }, [ordered, activeLayerId, selected, colorMode, isBackdrop]);
+
+  // Hover runs both ways, as in MapCanvas: the open list marks this stop's row.
+  useEffect(() => {
+    const node = hoveredKey ? nodes.find(n => n.key === hoveredKey) : undefined;
+    props.onHoverPoint?.(node ? { layerId: node.layerId, pointId: node.point.id } : null);
+  }, [hoveredKey]);
 
   const legAnnotations = useMemo(() => buildLegAnnotations(layers, colorMode), [layers, colorMode]);
 

@@ -21,7 +21,7 @@ export const REPOSITORY_URL = 'https://github.com/vibe-lark/Cartula';
 export const LICENSE_NAME = 'MIT';
 
 /** Kept in step with package.json — asserted by tests/contract.test.ts. */
-export const RELEASE_VERSION = '0.4.13';
+export const RELEASE_VERSION = '0.4.14';
 
 /**
  * A build stamp fit to appear in a handshake, or nothing.

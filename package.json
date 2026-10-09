@@ -1,6 +1,6 @@
 {
   "name": "cartula",
-  "version": "0.4.13",
+  "version": "0.4.14",
   "private": true,
   "type": "module",
   "description": "A shared spatial canvas for people and agents",
